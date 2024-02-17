@@ -17,7 +17,7 @@ using Reexport
 @reexport using SoleData
 
 using SoleLogics: AbstractInterpretation, getinstance, LogicalInstance, nworlds
-using SoleData: SupportedLogiset
+using SoleData: SupportedLogiset, UnivariateSymbolFeature
 
 using StatsBase
 
@@ -57,7 +57,7 @@ export lconfidence, gconfidence
 
 include("manipulations.jl")
 
-export combine, prune
+export Zcombine, prune
 export getcontributors
 export arules_generator
 
@@ -76,6 +76,8 @@ export HeaderTable, items
 export linkage, linkage!, follow, link! # dispatches for both FPTree and HeaderTable
 export patternbase
 export fpgrowth, @fpoptimize
+
+include("algorithms/cn2.jl")
 
 include("utils.jl") # IDEA: move this in SoleData
 

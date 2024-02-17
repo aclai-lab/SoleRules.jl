@@ -10,7 +10,7 @@ length `newlength` by taking all combinations of two itemsets and joining them.
 
 See also [`Itemset`](@ref).
 """
-function combine(itemsets::Vector{<:Itemset}, newlength::Integer)
+function Zcombine(itemsets::Vector{<:Itemset}, newlength::Integer)
     return Iterators.filter(
         combo -> length(combo) == newlength,
         Iterators.map(
@@ -22,14 +22,14 @@ end
 
 
 """
-    combine(variable::Vector{<:Item}, fixed::Vector{<:Item})
+    Zcombine(variable::Vector{<:Item}, fixed::Vector{<:Item})
 
 Return a generator which iterates the combinations of [`Item`](@ref)s in `variable` and
 prepend them to `fixed` vector.
 
 See also [`Item`](@ref).
 """
-function combine(variable::Vector{<:Item}, fixed::Vector{<:Item})
+function Zcombine(variable::Vector{<:Item}, fixed::Vector{<:Item})
     (Itemset(vcat(combo, fixed)) for combo in combinations(variable))
 end
 
@@ -47,7 +47,7 @@ function prune(candidates::Vector{Itemset}, frequents::Vector{Itemset}, k::Integ
     return Iterators.filter(
         # the iterator yields only itemsets for which every combo is in frequents
         itemset -> all(combo -> combo in frequents, combinations(itemset, k-1)),
-        combine(candidates, k)
+        Zcombine(candidates, k)
     )
 end
 
