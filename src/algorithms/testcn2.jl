@@ -4,17 +4,28 @@ using SoleRules
 using SoleData
 import SoleData: PropositionalLogiset, BoundedScalarConditions
 import SoleData: propositionalalphabet, feature
-
+using BenchmarkTools
+import Base: ==
 using Debugger
 db = Debugger
 
 
 Base.in(φ::LeftmostConjunctiveForm, a::Atom) = a ∈ φ.children
-antecedent(v::AbstractVector{LeftmostConjunctiveForm}) = length(v)
+
+nantecedent(v::AbstractVector{LeftmostConjunctiveForm}) = length(v)
 
 
-
-
+function ==(
+    φ1::LeftmostConjunctiveForm,
+    φ2::LeftmostConjunctiveForm,
+)::Bool
+    iseq = false
+    if length(φ1) == length(φ2)
+        boolvector = atoms(φ1) .∈ atoms(φ2)
+        iseq = !any(iszero, boolvector)
+    end
+    return iseq
+end
 
 function feature(
     φ::LeftmostConjunctiveForm
@@ -49,7 +60,6 @@ function specializestar(
             for atom ∈ atoms(conditions)
                 antecedentcopy = deepcopy(antecedent)
                 push!(antecedentcopy, atom)
-
                 antecedentcopy ∉ newstar && push!(newstar, antecedentcopy)       
             end
         end
