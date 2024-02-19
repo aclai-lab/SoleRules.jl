@@ -3,37 +3,28 @@ using SoleLogics
 using SoleRules
 using SoleData
 using Debugger
+using SoleBase
 dbg = Debugger
 #= Others =#
 using BenchmarkTools
 using DataFrames
+using StatsBase: countmap
 #= Import  =#
-import SoleData: PropositionalLogiset, BoundedScalarConditions
+import SoleData: PropositionalLogiset, ScalarCondition, BoundedScalarConditions
 import SoleData: propositionalalphabet, feature
 import SoleLogics: children
-import Base: ==
+import SoleBase: CLabel
+import Base: ==, ∈
 
-
-Base.in(φ::LeftmostConjunctiveForm, a::Atom) = a ∈ φ.children
-
-# Due LeftmostConjunctiveForm sono uguali se hanno:
-#    - lo stesso numero di atomi
-#    - ogni atomo di φ₁ è anche on φ₂
-function ==(
-    φ1::LeftmostConjunctiveForm,
-    φ2::LeftmostConjunctiveForm,
-)::Bool
-    return length(φ1) == length(φ2) && 
-        !any(iszero, map( x-> x ∈ atoms(φ1), atoms(φ2)))
-end
 
 function feature(
-    φ::LeftmostConjunctiveForm
+    φ::LeftmostConjunctiveForm{Atom{ScalarCondition}}
 )::AbstractVector{UnivariateSymbolFeature}
-    conditions =  value.(atoms(φ))
+    conditions = value.(atoms(φ))
     return feature.(conditions)
 end
 
+# TODO oppure composeformulas(φ, LeftmostConjunctiveForm(a)) ????
 function Base.push!(
     φ::LeftmostConjunctiveForm, 
     a::Atom
@@ -43,14 +34,14 @@ end
 
 
 function specializestar(
-    star::Vector{LeftmostConjunctiveForm{Atom}}, 
+    star::Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}, 
     conditions::BoundedScalarConditions;
     kwargs...
 )
     if length(star) == 0
-        newstar = [LeftmostConjunctiveForm{Atom}([atom]) for atom ∈ atoms(conditions)]
+        newstar = [LeftmostConjunctiveForm{Atom{ScalarCondition}}([atom]) for atom ∈ atoms(conditions)]
     else
-        newstar = []
+        newstar = Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
         for antecedent ∈ star, atom ∈ atoms(conditions)
             antecedentcopy = deepcopy(antecedent)
             push!(antecedentcopy, atom)
@@ -60,14 +51,74 @@ function specializestar(
     return newstar
 end
 
+function entropy(
+    φ::Formula,
+    P::PropositionalLogiset,
+    y::AbstractVector{CLabel};
+    kwargs...
+    )::Float32
 
-function mmm()
+
+    interpretations = interpret(φ, P)
+
+    # getindex.....
+
+
+    count = values(countmap(interpretations))
+    length(count) == 1 && return 0.0     
+
+    logbase = length(val)
+    prob = count ./ sum(count)
+
+    return -sum(prob .* log.(logbase, prob))
+end
+
+#= ================================================================================================================ =#
+function findbestantecedent(
+    boundedconditions::BoundedScalarConditions,
+    examples::AbstractDataFrame,
+    y::AbstractVector{CLabel};
+    kwargs...
+)
+    star = Vector{LeftmostConjunctiveForm}([])
+    # bestantecedent = LeftmostConjunctiveForm([TOP])               
+    pl = PropositionalLogiset(examples)
+
+    while true
+        newstar = specializestar(star, boundedconditions)
+        isempty(newstar) && break # Exit condition
+        
+        entropyes = map(ind -> (ind=>entropy(
+                                    newstar[ind], 
+                                    pl,
+                                    y
+                                    )), 1:length(newstar))
+
+        # ordinamento!(entropyes, "ordina secondo entropia")
+        # newbestruleentropy = entropydf[1, :E]
+
+        # if (newbestruleentropy < bestruleentropy)
+        #     bestantecedent, bestruleentropy = entropydf[1, :]
+        # end
+        # # Reduce de number of rules to the user defined max
+
+        # userdefinedmax = 3
+        # if nrow(entropydf) > userdefinedmax
+        #     entropydf = entropydf[1:userdefinedmax, :]
+        # end
+        # newstarrules = entropydf[:, :R] 
+        # star = rules2star( newstarrules )
+    end
+    return bestrule
+end
+
+
+function exec()
     df = DataFrame([1 2; 4 5], :auto)
     boundedconditions = propositionalalphabet(PropositionalLogiset(df))
         
-    #= function findBestAntecedent =#
-    star0 = Vector{LeftmostConjunctiveForm{Atom}}([])
-    #= function SpecializeStar =#
+    star0 = Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
+
     star1 = specializestar(star0, boundedconditions)
     star2 = specializestar(star1, boundedconditions)
 
@@ -92,17 +143,3 @@ AbstractSyntaxStructure
 
 =============================================================================#
 
-
-#= ERROR in SPECIALIZESTAR             
-    convert(#unused#::Type{Atom
-                            ScalarCondition
-                                Int64, 
-                                UnivariateSymbolFeature, 
-                                ScalarMetaCondition{UnivariateSymbolFeature, 🔋typeof(<=)}}}}, 
-                                
-                    p::Atom{
-                            ScalarCondition{
-                                Int64, 
-                                UnivariateSymbolFeature, 
-                                ScalarMetaCondition{UnivariateSymbolFeature, 🔋typeof(>=)}}})
-=#
