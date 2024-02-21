@@ -9,7 +9,7 @@ import SoleLogics: LogicalInstance, Formula, LeftmostLinearForm
 import SoleModels: Rule, AbstractModel, ConstantModel
 import SoleBase: CLabel
 import SoleData: PropositionalLogiset, BoundedScalarConditions
-import SoleData: getfeatures, propositionalalphabet, UnivariateSymbolFeature
+import SoleData: getfeatures, propositionalalphabet, UnivariateSymbolValue
 const global bestruleentropy = 2.0
 
 
@@ -26,7 +26,7 @@ end
     treshold(sel::Selector) = sel.val # che poi non è una treshold :)
 
     function selector2soleatom(sel::Selector)::Atom
-        feature = UnivariateSymbolFeature(varname(sel))
+        feature = UnivariateSymbolValue(varname(sel))
         tresh = treshold(sel)
         return Atom(ScalarCondition(feature, ≤, tresh)) # (≤) sarebbe (=), sostitusione solo a scopo dimostrativo.  
     end
