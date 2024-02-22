@@ -4,12 +4,14 @@ using SoleBase
 using SoleModels
 using DataFrames
 using Random
-
+using StatsBase: countmap
+using Debugger
+db = Debugger
 import SoleLogics: LogicalInstance, Formula, LeftmostLinearForm
 import SoleModels: Rule, AbstractModel, ConstantModel
 import SoleBase: CLabel
 import SoleData: PropositionalLogiset, BoundedScalarConditions
-import SoleData: getfeatures, propositionalalphabet, UnivariateSymbolValue
+import SoleData: features, alphabet, UnivariateSymbolValue
 const global bestruleentropy = 2.0
 
 
@@ -24,6 +26,17 @@ end
 
     varname(sel::Selector) = sel.att
     treshold(sel::Selector) = sel.val # che poi non è una treshold :)
+
+    function computeselectors(df)
+        selectorlist = []
+        attributes = names(df)
+        # do per scontato che l' attributo target sia l' ultimo 
+        for attribute in attributes[1:end-1]
+            map( x -> push!( selectorlist, Selector(Symbol(attribute), x)), unique(df[:, attribute]) )
+        end
+    
+        return selectorlist
+    end
 
     function selector2soleatom(sel::Selector)::Atom
         feature = UnivariateSymbolValue(varname(sel))
@@ -81,7 +94,7 @@ end
 
 struct MyRule
     body::RuleBody
-    head::Int64
+    head
 end
 
 # >>>
@@ -183,91 +196,106 @@ function entropy(x)
     return -sum( pi .* log.(logbase, pi) )
 end
 
-function rulecoverage(rulebody::RuleBody, examples)::Vector{Bool}
+function complexcoverage(rulebody::RuleBody, examples)::Vector{Bool}
 
-    rulecoverage = ones(Bool, nrow(examples))
+    complexcoverage = ones(Bool, nrow(examples))
     for selector ∈ getselectors(rulebody)
         selcoverage = (examples[!, selector.att] .== selector.val) 
-        rulecoverage = Bool.(selcoverage) .& rulecoverage
+        complexcoverage = Bool.(selcoverage) .& complexcoverage
     end
-    return rulecoverage
+    return complexcoverage
 end 
 
 function entropy(rule, examples)
-    coveredindexes = findall(x->x==1, getrulecoverage(rule, examples) )
+    coveredindexes = findall(x->x==1, complexcoverage(rule, examples) )
     coveredclasses = examples[coveredindexes, end]
     return entropy(coveredclasses)
 end
 
-function findbestantecedent(
-            boundedconditions::BoundedScalarConditions,
-            examples::AbstractDataFrame,
-            y::AbstractVector{CLabel};
-            kwargs...
-)
-        star = Vector{LeftmostConjunctiveForm}
-        bestantecedent = LeftmostConjunctiveForm(BOT)               
+function findBestComplex(selectors, examples)
+
+    star = Star([])
+    bestrule = RuleBody(Set([]))
+    bestruleentropy = 2
+    
+    while true
         
-        while true
+        newstar = specializestar(star, selectors)
+         #= Exit condition =#
+         if isempty(newstar)
+            break
+        end
+        #= Dataframe definition =#
+        entropydf = DataFrame(R=RuleBody[], E=Float32[])
+
+        for rule ∈  newstar.rules
+
+            coverage = complexcoverage(rule, examples)
+            # Indici delle istanze coperte
+            coveredindexes = findall(x->x==1, coverage)
+            # Array cotenente gli attributi target di ogni istanza coperta
+            coveredclasses = examples[ coveredindexes, end]
+            enrpy = entropy(coveredclasses)
+            # Aggiungo la regola e la sua valutazione al dizionario
+            push!(entropydf, (rule, enrpy))
             
-            newstar = specializestar(star, boundedconditions)
-            if isempty(newstar) #= Exit condition =#  
-                break 
-            end
-            entropydf = DataFrame(R=RuleBody[], E=Float32[])
-            for antecedent ∈ rules(newstar)
-                # Aggiungo la regola e la sua valutazione al dizionario
-                enrpy = entropy(antecedent, examples)
-                push!(entropydf, (antecedent, enrpy))
-            end
-           
-            sort!(entropydf, [:E])
-            newbestruleentropy = entropydf[1, :E]
-            if (newbestruleentropy < bestruleentropy)
-                bestantecedent, bestruleentropy = entropydf[1, :]
-            end
-            # Reduce de number of rules to the user defined max
-        
-            userdefinedmax = 3
-            if nrow(entropydf) > userdefinedmax
-                entropydf = entropydf[1:userdefinedmax, :]
-            end
-            newstarrules = entropydf[:, :R] 
-            star = rules2star( newstarrules )
-         end
-    return bestrule
+        end
+       
+        sort!(entropydf, [:E])
+        # Tende a mantenere le regole più generali a parità di entropia 
+        newbestruleentropy = entropydf[1, :E]
+        if ( newbestruleentropy < bestruleentropy)
+            bestrule = entropydf[1, :R]
+            bestruleentropy = entropydf[1, :E]
+        end
+        # Reduce de number of rules to the user defined max
+        userdefinedmax = 3
+        if nrow(entropydf) > userdefinedmax
+            entropydf = entropydf[1:userdefinedmax, :]
+        end
+        newstarrules = entropydf[:, :R] 
+        star = rules2star( newstarrules )
+     end
+return bestrule
+end
+
+function getmostcommon( classlist )
+occurrence = countmap(classlist)
+return findmin(occurrence)[2]
 end
 
 
+
 function CN2(
-    X_df::AbstractDataFrame,
+    currentX_df::AbstractDataFrame,
     y::AbstractVector{CLabel};
     kwargs...
 )
 
-    #nrow(X_df) == length(y) && error("error message.....")
-
-
-    rulelist = Vector{Rule}()
-    bitmask = trues(nrow(X_df)) #= ::BitVector =# 
-    boundedconditions = propositionalalphabet(PropositionalLogiset(X_df))   #atoms(boundedcondition) to iterate on atoms
-    
-    # while nrow(examples) > 0
+    bitmask = Bool.(ones(Int64, length(y)))
+    selectorlist = computeselectors(currentX_df)
+    rulelist = []    
+    while nrow(currentX_df) > 0
+            
+        bestcomplex = findBestComplex(selectorlist, currentX_df)
+        coverage = complexcoverage(bestcomplex, currentX_df)
+         
+        coveredindexes = findall(x->x==1, coverage)
+        mostcommonclass = getmostcommon(y[coveredindexes])
+        push!(rulelist, MyRule(bestcomplex, mostcommonclass) )
         
-        currentX_df = @view X_df[bitmask, :]
-        bestantecedent = findbestantecedent(boundedconditions, currentX_df, y)#::Formula
-
-
-    #     rulecoverage = rulecoverage(bestantecedent, currentX_df)
-    #     coveredindexes = findall(x->x==1, rulecoverage)
-    #     examplesclass = examples[coveredindexes, end]
-    #     mostcommonclass = getmostcommon(examplesclass)
-
-    #     push!(rulelist, MyRule(bestantecedent, mostcommonclass) ) 
+        @bp
+        currentX_df = currentX_df[coveredindexes, :]
+    end
         
-    #     # deleteat!(examples, coveredindexes)
-    #     bitmask = bitmask .& coveredindexes
-    # end
-    
-    # return RuleList(rulelist)
+    return RuleList(rulelist)
+end
+
+
+function execmy()
+
+    df = DataFrame([1 2 3 4; 5 6 7 8], :auto)
+    y = Vector{SoleBase.CLabel}(["+", "-"])
+    CN2(df, y)
+
 end
