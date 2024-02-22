@@ -11,44 +11,41 @@ using DataFrames
 using StatsBase: countmap
 #= Import  =#
 import SoleData: PropositionalLogiset, ScalarCondition, BoundedScalarConditions
-import SoleData: alphabet, feature
+import SoleData: alphabet
 import SoleLogics: children
 import SoleBase: CLabel
-import Base: ==, ∈
 
 # variabile temporaneamente globale
-global const user_defined_max = 2
+const global user_defined_max = 2
+
+# TODO see together
+# function Base.:(==)(
+#     φ1::LeftmostLinearForm,
+#     φ2::LeftmostLinearForm,
+# )::Bool
+#     return typeof(φ1) == typeof(φ2) &&
+#            length(φ1) == length(φ2) &&
+#            !any(iszero, map(x -> x ∈ atoms(φ1), atoms(φ2)))
+# end
 
 
-Base.in(φ::LeftmostLinearForm, a::Atom) = a ∈ φ.children
-function Base.:(==)(
-    φ1::LeftmostLinearForm,
-    φ2::LeftmostLinearForm,
-)::Bool
-    return typeof(φ1) == typeof(φ2) && 
-            length(φ1) == length(φ2) && 
-                !any(iszero, map( x-> x ∈ atoms(φ1), atoms(φ2)))
-end
-
-
-function feature(
+function getfeatures(
     φ::LeftmostConjunctiveForm{Atom{ScalarCondition}}
 )::AbstractVector{UnivariateSymbolValue}
     conditions = value.(atoms(φ))
     return feature.(conditions)
 end
 
-# TODO oppure composeformulas(φ, LeftmostConjunctiveForm(a)) ????
-function Base.push!(
-    φ::LeftmostConjunctiveForm, 
+function pushatom(
+    φ::LeftmostConjunctiveForm,
     a::Atom
 )
-    feature(value(a)) ∉ feature(φ) && push!(φ.children, a)
+    feature(value(a)) ∉ getfeatures(φ) && push!(φ.children, a)
 end
 
 
 function specializestar(
-    star::Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}, 
+    star::Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}},
     conditions::BoundedScalarConditions;
     kwargs...
 )
@@ -58,8 +55,8 @@ function specializestar(
         newstar = Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
         for antecedent ∈ star, atom ∈ atoms(conditions)
             antecedentcopy = deepcopy(antecedent)
-            push!(antecedentcopy, atom)
-            antecedentcopy ∉ newstar && push!(newstar, antecedentcopy)       
+            pushatom(antecedentcopy, atom)
+            antecedentcopy ∉ newstar && push!(newstar, antecedentcopy)
         end
     end
     return newstar
@@ -71,8 +68,8 @@ function entropy(
     y::AbstractVector{<:CLabel};
 )::Float32
     count = values(countmap(y))
-    length(count) == 1 && return 0.0     
-    
+    length(count) == 1 && return 0.0
+
     logbase = length(count)
     prob = count ./ sum(count)
     return -sum(prob .* log.(logbase, prob))
@@ -83,10 +80,10 @@ end
 
 # return the indexes of the covered instances
 function coveredindexes(
-    φ::LeftmostConjunctiveForm, 
+    φ::LeftmostConjunctiveForm,
     X::PropositionalLogiset
 )
-    return findall(z->z==1, interpret(φ, X))
+    return findall(z -> z == 1, interpret(φ, X))
 end
 
 
@@ -96,16 +93,16 @@ function sorted_antecedents(
     X::PropositionalLogiset,
     y::Vector{<:CLabel}
 )
-    # entropyes = Vector(Pairs(antecedent_index, antecedent_entropy))
-    entropyes = map(ind -> (ind=>entropy(y[interpret(star[ind], X)])), 
-                                1:length(star))
+    # entropies = Vector(Pairs(antecedent_index, antecedent_entropy))
+    entropies = map(ind -> (ind => entropy(y[interpret(star[ind], X)])),
+        1:length(star))
 
-    sort!(entropyes, by=e->e.second)
+    sort!(entropies, by=e -> e.second)
     # reduce the number of antecedents to user_defined_max
-    i_bests = first.(length(entropyes) > user_defined_max ? 
-                            entropyes[1:user_defined_max] : entropyes) 
-    bestentropy = second(entropyes[1])
-    
+    i_bests = first.(length(entropies) > user_defined_max ?
+                     entropies[1:user_defined_max] : entropies)
+    bestentropy = second(entropies[1])
+
     return (i_bests, bestentropy)
 end
 
@@ -128,26 +125,26 @@ function find_best_antecedent(
 
         # TODO include test for significance
         i_orderedantecedents, newbestentropy = sorted_antecedents(newstar, X, y)
-        
+
         if newbestentropy < bestentropy
-            bestantecedent = newstar[i_orderedantecedents[1]] 
+            bestantecedent = newstar[i_orderedantecedents[1]]
             bestruleentropy = newbestentropy
         end
 
         star = newstar[i_orderedantecedents]
     end
-    return entropyes
+    return bestantecedent
 end
 
 
 function exec()
 
-    df = DataFrame([1 2 3 ; 5 6 7; 8 9 10], :auto)
+    df = DataFrame([1 2 3; 5 6 7; 8 9 10], :auto)
     X = PropositionalLogiset(df)
     boundedconditions = alphabet(X, [≤, ≥])
 
-    y = ["+","+","-"]
-        
+    y = ["+", "+", "-"]
+
     star0 = Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
     star1 = specializestar(star0, boundedconditions)
     @show findbestantecedents(star1[1:4], PropositionalLogiset(df), y)
