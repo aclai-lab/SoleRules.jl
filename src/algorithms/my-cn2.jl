@@ -260,32 +260,35 @@ return bestrule
 end
 
 function getmostcommon( classlist )
-occurrence = countmap(classlist)
-return findmin(occurrence)[2]
+    occurrence = countmap(classlist)
+    return findmin(occurrence)[2]
 end
 
 
 
 function CN2(
-    currentX_df::AbstractDataFrame,
+    X_df::AbstractDataFrame,
     y::AbstractVector{CLabel};
     kwargs...
 )
+    selectorlist = computeselectors(X_df)
+    currentX_df = @view X_df[:,:]
+    indexes = collect(1:length(y))
+    rulelist = []
 
-    bitmask = Bool.(ones(Int64, length(y)))
-    selectorlist = computeselectors(currentX_df)
-    rulelist = []    
-    while nrow(currentX_df) > 0
+
+    while length(indexes) > 0
             
         bestcomplex = findBestComplex(selectorlist, currentX_df)
         coverage = complexcoverage(bestcomplex, currentX_df)
          
         coveredindexes = findall(x->x==1, coverage)
         mostcommonclass = getmostcommon(y[coveredindexes])
-        push!(rulelist, MyRule(bestcomplex, mostcommonclass) )
+        push!(rulelist, MyRule(bestcomplex, mostcommonclass))
         
-        @bp
-        currentX_df = currentX_df[coveredindexes, :]
+        # Virtually remove the instances
+        setdiff!(indexes, indexes[coveredindexes])
+        currentX_df = @view X_df[indexes, :]
     end
         
     return RuleList(rulelist)
