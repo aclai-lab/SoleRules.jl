@@ -5,43 +5,50 @@ using SoleModels
 using DataFrames
 using Random
 using StatsBase: countmap
-using Debugger
-db = Debugger
+# using Debugger
+# using CSV
+# db = Debugger
 import SoleLogics: LogicalInstance, Formula, LeftmostLinearForm
 import SoleModels: Rule, AbstractModel, ConstantModel
 import SoleBase: CLabel
 import SoleData: PropositionalLogiset, BoundedScalarConditions
-import SoleData: features, alphabet, UnivariateSymbolValue
-const global bestruleentropy = 2.0
+import SoleData: features, UnivariateSymbolValue
+
+global bestruleentropy = 2.0
+global test_ops = [≥, ≤]
+global user_defined_max = 3
 
 
 struct Selector    
     att::Symbol # simil Feature
     val
+    test_operator
 end
 
 # >>>
 
-    Base.show(io::IO, s::Selector) = print(io, "($(s.att) = $(s.val))")
-
+    Base.show(io::IO, s::Selector) = print(io, "($(s.att) $(s.test_operator) $(s.val))")
+    test_operator(sel::Selector) = sel.test_operator
     varname(sel::Selector) = sel.att
     treshold(sel::Selector) = sel.val # che poi non è una treshold :)
 
     function computeselectors(df)
+
         selectorlist = []
         attributes = names(df)
-        # do per scontato che l' attributo target sia l' ultimo 
-        for attribute in attributes[1:end-1]
-            map( x -> push!( selectorlist, Selector(Symbol(attribute), x)), unique(df[:, attribute]) )
+        for attribute ∈ attributes, test_op ∈ test_ops
+            map( x -> push!( selectorlist, Selector(Symbol(attribute), x, test_op)), 
+                        unique(df[:, attribute]) 
+                )
         end
-    
         return selectorlist
     end
 
     function selector2soleatom(sel::Selector)::Atom
         feature = UnivariateSymbolValue(varname(sel))
         tresh = treshold(sel)
-        return Atom(ScalarCondition(feature, ≤, tresh)) # (≤) sarebbe (=), sostitusione solo a scopo dimostrativo.  
+        test_op = test_operator(sel)
+        return Atom(ScalarCondition(feature, test_op, tresh))
     end
     function selector2soleatom(sel::Set{Selector})::Tuple{Atom}
         return Tuple(selector2soleatom.(sel))
@@ -103,7 +110,7 @@ end
         println(io, " $(rule.body) ⟶ ($(rule.head))" )
     end
 
-    gethead(r::MyRule) = r.head 
+    head(r::MyRule) = r.head 
     getselectors(mr::MyRule) = getselectors(mr.body)
     _AND(atoms) = length(atoms) > 1 ? LeftmostConjunctiveForm(∧(atoms)) : atoms[1]
     
@@ -112,7 +119,7 @@ end
         atoms = selector2soleatom(selectors)
         
         _antecedent = _AND(atoms)
-        _consequent = ConstantModel(gethead(myrule))
+        _consequent = ConstantModel(head(myrule))
         return Rule(_antecedent, _consequent)
     end
 
@@ -184,11 +191,12 @@ end
 ########################################################################################################
 # End structures definition
 
-getmostcommon( classlist ) = findmin(countmap(classlist))[2]
+_getmostcommon( classlist ) = findmin(countmap(classlist))[2]
 symbolnames(X_df::AbstractDataFrame) = Symbol.(names(X_df))
 
 function entropy(x)
-    if length(x) == 0 return 2.0 end
+
+    if length(x) == 0 return Inf end
     val = values(countmap(x))
     if length(val) == 1 return 0.0 end    
     logbase = length(val)
@@ -198,12 +206,16 @@ end
 
 function complexcoverage(rulebody::RuleBody, examples)::Vector{Bool}
 
-    complexcoverage = ones(Bool, nrow(examples))
+    compcov = ones(Bool, nrow(examples))
+
     for selector ∈ getselectors(rulebody)
-        selcoverage = (examples[!, selector.att] .== selector.val) 
-        complexcoverage = Bool.(selcoverage) .& complexcoverage
+        test_op = test_operator(selector)
+        compcov = test_op.(examples[!, varname(selector)], 
+                                        treshold(selector)
+                                        ) .& compcov
     end
-    return complexcoverage
+
+    return compcov
 end 
 
 function entropy(rule, examples)
@@ -212,54 +224,43 @@ function entropy(rule, examples)
     return entropy(coveredclasses)
 end
 
-function findBestComplex(selectors, examples)
+function findBestComplex(selectors, X, y)
 
     star = Star([])
     bestrule = RuleBody(Set([]))
     bestruleentropy = 2
-    
     while true
-        
+
         newstar = specializestar(star, selectors)
-         #= Exit condition =#
-         if isempty(newstar)
+    
+        if isempty(newstar)
             break
         end
-        #= Dataframe definition =#
         entropydf = DataFrame(R=RuleBody[], E=Float32[])
-
-        for rule ∈  newstar.rules
-
-            coverage = complexcoverage(rule, examples)
-            # Indici delle istanze coperte
+        for rule ∈ newstar.rules
+                    
+            coverage = complexcoverage(rule, X)
             coveredindexes = findall(x->x==1, coverage)
-            # Array cotenente gli attributi target di ogni istanza coperta
-            coveredclasses = examples[ coveredindexes, end]
-            enrpy = entropy(coveredclasses)
-            # Aggiungo la regola e la sua valutazione al dizionario
-            push!(entropydf, (rule, enrpy))
-            
+            push!(entropydf, ( 
+                        rule, 
+                        entropy(y[coveredindexes]),
+
+                    ))
         end
-       
         sort!(entropydf, [:E])
-        # Tende a mantenere le regole più generali a parità di entropia 
         newbestruleentropy = entropydf[1, :E]
-        if ( newbestruleentropy < bestruleentropy)
-            bestrule = entropydf[1, :R]
-            bestruleentropy = entropydf[1, :E]
+        if newbestruleentropy < bestruleentropy
+            bestrule, bestruleentropy = entropydf[1, :]
         end
-        # Reduce de number of rules to the user defined max
-        userdefinedmax = 3
-        if nrow(entropydf) > userdefinedmax
-            entropydf = entropydf[1:userdefinedmax, :]
+        if nrow(entropydf) > user_defined_max
+            entropydf = entropydf[1:user_defined_max, :]
         end
-        newstarrules = entropydf[:, :R] 
-        star = rules2star( newstarrules )
-     end
+        star = rules2star(entropydf[:, :R])
+    end
 return bestrule
 end
 
-function getmostcommon( classlist )
+function _getmostcommon( classlist )
     occurrence = countmap(classlist)
     return findmin(occurrence)[2]
 end
@@ -267,38 +268,48 @@ end
 
 
 function CN2(
-    X_df::AbstractDataFrame,
+    X::AbstractDataFrame,
     y::AbstractVector{CLabel};
     kwargs...
 )
-    selectorlist = computeselectors(X_df)
-    currentX_df = @view X_df[:,:]
-    indexes = collect(1:length(y))
-    rulelist = []
+    length(y) != nrow(X) && error("size of X and y mismatch")
+    
+    current_X = @view X[:,:]
+    current_y = @view y[:]
+    
+    slice_tocover = collect(1:length(y))
+    selectors = computeselectors(X)
+    rulelist = Vector{SoleModels.ClassificationRule}([])
+    
 
-
-    while length(indexes) > 0
-            
-        bestcomplex = findBestComplex(selectorlist, currentX_df)
-        coverage = complexcoverage(bestcomplex, currentX_df)
-         
+    while length(slice_tocover) > 0
+        bestcomplex = findBestComplex(selectors, current_X, current_y)
+        coverage = complexcoverage(bestcomplex, current_X)
         coveredindexes = findall(x->x==1, coverage)
-        mostcommonclass = getmostcommon(y[coveredindexes])
-        push!(rulelist, MyRule(bestcomplex, mostcommonclass))
+        mostcommonclass = _getmostcommon(current_y[coveredindexes])
+        push!(rulelist, myrule2solerule(MyRule(bestcomplex, mostcommonclass)))
         
         # Virtually remove the instances
-        setdiff!(indexes, indexes[coveredindexes])
-        currentX_df = @view X_df[indexes, :]
-    end
-        
-    return RuleList(rulelist)
+        setdiff!(slice_tocover, slice_tocover[coveredindexes])
+        current_X = @view X[slice_tocover, :]
+        current_y = @view y[slice_tocover]
+    end        
+    return DecisionList(rulelist, ⊤)
 end
 
+# function execmy()
 
-function execmy()
+#     datasets_dir = "/home/edoardo/Scrivania/TesiTitocinio/example-dataset/"
+#     input = datasets_dir * "iris.csv"
+    
+#     Xy_df = DataFrame(CSV.File(input))
 
-    df = DataFrame([1 2 3 4; 5 6 7 8], :auto)
-    y = Vector{SoleBase.CLabel}(["+", "-"])
-    CN2(df, y)
+#     X_df = Xy_df[:, 1:(end-1)]
 
-end
+#     y = Vector{SoleBase.CLabel}(String.(Xy_df[:, end]))
+
+#     CN2(X_df, y) 
+# end
+
+
+

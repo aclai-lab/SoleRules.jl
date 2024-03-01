@@ -1,72 +1,23 @@
 Main:
-  ✔ define Item, Itemset and its interface @done(24-01-15 16:16)
-    # getters, setters, merge method
-  ✔ define meaningfulness measures in an extensible way @done(24-01-15 16:16)
-    # local and global support, confidence and write tests
-  ✔ uniform algorithms interface (apply) @done(24-01-16 13:54)
-  ✔ think about which parameters are needed and how they can be customized @done(24-01-16 13:54)
-    # maybe a configuration structure with an array of local measures?
-    # also, each measure can be activated locally or globally
-    # localdict{string(local measure) -> counter} # if local measure is given
-    # globldict{string(local measure) -> counter} # if local measure is given with globality on
-  ✔ write an initial apriori implementation @done(24-02-05 23:52)
-    ☐ leverage the fact that `prune` is a generator
-    ☐ remove FunctionWrappers, and simply convert `algo` in a miner into `Function`
-  ☐ write an initial fpgrowth implementation
-    ✔ in FPTree, realize a getcontributors function to hash the worlds in which an Item is true @done(24-02-10 21:12)
-    ✔ FPTree getters, setters and utilities @done(24-02-10 21:13)
-    ✔ HeaderTable with link! and follow @done(24-02-10 21:13)
-    ✔ FPTree Base.push! overloading @done(24-02-10 21:35)
-    ✔ Modal FPTree (see contributors) @done(24-02-12 02:30)
-    ✔ pattern base constructor (enhanced itemset type, conditional pattern base type) @done(24-02-13 12:51)
-    ✔ packing simultaneous FPTree and HeaderTable construction, then follow the algorithm described in the thesis "Algorithm for association rules mining from modal, temporal, spatial datasets" @done(24-02-13 15:13)
-    ✔ guarantee HeaderTable internal state is correct when projecting an FPTree @done(24-02-13 15:57)
-      # that is, check if items are sorted decreasingly by global support. This can be done only if a miner is provided!
-    ☐ in a FPTree, instead of counting how many integers inside `contributors` are different from 0, use a counter `contributors_count`
-    ☐ pack `patternbase` inside `projection`
-    ☐ `patternbase` must filter out the items inside the conditional pattern base which are not enough frequents
-    ☐ avoid instantiating two dictionaries in `patternbase`. Dict{Item,Pair{Int64,WorldsMask}} could be an idea, but updating immutable structures is a bad idea, since WorldsMask is very long.
 
 Generic:
-  ✔ move memoization accountability to ARuleMiner @done(24-02-07 23:58)
-  ✔ call meaningfulness measures with ARuleMiner as optional argument @done(24-02-07 23:58)
-  ✔ association rules generator (add and leverage ResumableFunction) @done(24-02-07 23:58)
-  ☐ think about alphabet parameter in apriori
-  ☐ override Base.show for itemsets and association rules
-  ☐ measures inside an ARuleMiner should be unique
-  ☐ miner.alphbaet should be renamed to represent a vector of item
-  ☐ Base.push!(fptree::FPTree etc...) dispatches for `Itemset` and `EnhancedItemset` are very similar... think about avoid repetitions
-    # check push! docstrings
-  ☐ make more macros like @fpoptimize (e.g., to handle mining timing). This is not trivial, as these macros can be chained
+    ☐ Importare in Sole i risultati di orange . File picke? 
+    ☐ Capire perché i risultati di sole differiscono da quelli di Orange
+    ☐ Eliminare implementazione superflua cn2
 
-Optimizations:
-  ☐ miner.alphabet should be treated as a generator 
-  ☐ global memoization should check if memoized treshold is larger than requested one
-  ☐ check whether sum between two vectors in addcontributors!(fptree::FPTree, contribution::WorldsMask) is optimized
-
-  Utility:
-  ☐ build a macro to implement decorator pattern to build local and global measures, optionally exploiting ARuleMiner memoization
-  ☐ better design how an ARuleMiner keeps track of local measures. Local and global measures CAN be indipendent. 
-  ☐ Base.push!(fptree::FPTree, itemset::Itemset, miner::ARuleMiner) doesn't check if itemset is sorted by gsupport. Add a safe=false flag.
-  ✔ expose a simple-to-understand pool of utility methods to perform combinatorics over itemsets @done(24-02-08 20:30)
-    ✔ # (Itemset changed to Vector type from custom) @done(24-02-08 20:28)
-    ✔ combine @done(24-02-08 20:30)
-    ✔ prune @done(24-02-08 20:30)
-    ✔ arules generation with powerset @done(24-02-08 20:30)
-  ✔ contributors-related consts, contributors getter and addcontributors! setter (to implement modal FPTree) @done(24-02-12 02:31)
-
-To SoleModels or SoleData:
-  ✔ consider feature when binning @done(24-02-02 15:52)
-  ✔ organize the alphabet generation system @done(24-02-05 23:52)
-  ☐ find out how to extract interesting literals from which mine association rules
-
+Utility:
+    ☐ Implementing instances(PropositionalLogiset)
+        ☐ Gestione errore in istanziazione PropositionalLogiset{DataFrame}(SubDataFrame)
+        # già scritta soluzione temporanea
+SS
 Testing:
-  ☐ measure apriori algorithms execution time, leveraging SupportedLogiset optimization capabilities
-  ☐ write unit tests
+    ☐ Scrivere test che chiama CN2, e che valuta la qualità del risultato
+    ✔ Verificare 100% accuratezza sul dataset di trainig ? @done(24-03-01 03:02)
+    ☐ Divisione train/test come nei test di ModalDecisionTrees.jl, (vedi iris)
+    ☐ Time (@time) 
 
 Future:
-  ☐ item_contrained_measures and rule_constrained_measures fields in ARuleMiner could be dictionaries
-  ☐ instead of just (gmeas, lthreshold, gthreshold), may a collection of indipendent (lmeas, lthreshold) be useful?
+    ☐ Differenziare caso attributi discreti/categoriali
+    # eltype.(eachcol(df))
 
-Documentation:
-  ☐ write a v0.1 documentation
+

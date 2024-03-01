@@ -20,7 +20,6 @@ import Base: ==, ∈
 global const user_defined_max = 2
 
 
-Base.in(φ::LeftmostLinearForm, a::Atom) = a ∈ φ.children
 function Base.:(==)(
     φ1::LeftmostLinearForm,
     φ2::LeftmostLinearForm,
@@ -90,7 +89,6 @@ function coveredindexes(
 end
 
 
-# TODO parlarne con Giò
 function sorted_antecedents(
     star::Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}},
     X::PropositionalLogiset,
@@ -101,7 +99,6 @@ function sorted_antecedents(
                                 1:length(star))
 
     sort!(entropyes, by=e->e.second)
-    # reduce the number of antecedents to user_defined_max
     i_bests = first.(length(entropyes) > user_defined_max ? 
                             entropyes[1:user_defined_max] : entropyes) 
     bestentropy = second(entropyes[1])
