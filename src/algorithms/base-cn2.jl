@@ -267,7 +267,7 @@ end
 
 
 
-function CN2(
+function base_cn2(
     X::AbstractDataFrame,
     y::AbstractVector{CLabel};
     kwargs...
@@ -278,9 +278,7 @@ function CN2(
     current_y = @view y[:]
     
     slice_tocover = collect(1:length(y))
-    print("computing selectors...")
     selectors = computeselectors(X)
-    println(" end")
     rulelist = Vector{SoleModels.ClassificationRule}([])
     
 
@@ -299,19 +297,6 @@ function CN2(
     return DecisionList(rulelist, ⊤)
 end
 
-# function execmy()
-
-#     datasets_dir = "/home/edoardo/Scrivania/TesiTitocinio/example-dataset/"
-#     input = datasets_dir * "iris.csv"
-    
-#     Xy_df = DataFrame(CSV.File(input))
-
-#     X_df = Xy_df[:, 1:(end-1)]
-
-#     y = Vector{SoleBase.CLabel}(String.(Xy_df[:, end]))
-
-#     CN2(X_df, y) 
-# end
 
 
 

@@ -17,10 +17,14 @@ import SoleBase: CLabel
 import Base: ==, ∈
 
 # variabile temporaneamente globale
+
 global user_defined_max = 3
+global SPEC_VERSION = :new
 
 
-_getmostcommon( classlist ) = findmin(countmap(classlist))[2]
+
+
+_getmostcommon(classlist) = findmin(countmap(classlist))[2]
 
 
 function Base.:(==)(
@@ -32,7 +36,6 @@ function Base.:(==)(
                 !any(iszero, map( x-> x ∈ atoms(φ1), atoms(φ2)))
 end
 
-
 function feature(
     φ::LeftmostConjunctiveForm{Atom{ScalarCondition}}
 )::AbstractVector{UnivariateSymbolValue}
@@ -40,7 +43,6 @@ function feature(
     return feature.(conditions)
 end
 
-# TODO oppure composeformulas(φ, LeftmostConjunctiveForm(a)) ????
 function composeformulas!(
     φ::LeftmostConjunctiveForm, 
     a::Atom
@@ -48,23 +50,16 @@ function composeformulas!(
     feature(value(a)) ∉ feature(φ) && push!(φ.children, a)
 end
 
-
-
-function smart_conditions(
+function conjunctible_conditions(
     bsc::BoundedScalarConditions,
     φ::Formula
-
 )::Union{Bool,BoundedScalarConditions}
 
     φ_features = feature(φ)
-    println("smart")
-
     conds = [(meta_cond, vals) for (meta_cond, vals) ∈ bsc.grouped_featconditions 
                 if feature(meta_cond) ∉ φ_features]
-
     return conds == [] ? false : BoundedScalarConditions{ScalarCondition}(conds)
 end
-
 
 
 function specializestar(
@@ -78,14 +73,15 @@ function specializestar(
         newstar = Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
         for antecedent ∈ star
 
-            (reducedconditions = smart_conditions(conditions, antecedent)) != false && continue
+            (reducedconditions = conjunctible_conditions(conditions, antecedent)) != false && continue
             for atom ∈ atoms(reducedconditions)
 
                 antecedentcopy = deepcopy(antecedent)
                 composeformulas!(antecedentcopy, atom)
 
                 antecedentcopy ∉ newstar && 
-                antecedentcopy ∉ star && push!(newstar, antecedentcopy) 
+                antecedentcopy ∉ star && 
+                push!(newstar, antecedentcopy) 
             end      
         end
     end
@@ -93,7 +89,7 @@ function specializestar(
 end
 
 
-function new_specializestar(
+function old_specializestar(
     star::Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}, 
     conditions::BoundedScalarConditions;
     kwargs...
@@ -102,28 +98,18 @@ function new_specializestar(
         newstar = [LeftmostConjunctiveForm{Atom{ScalarCondition}}([atom]) for atom ∈ atoms(conditions)]
     else
         newstar = Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
-        for antecedent ∈ star
-            
-            reducedconditions = smart_conditions(conditions, antecedent)
-            reducedconditions == false && continue 
-
-            for atom ∈ atoms(smart_conditions(conditions, antecedent))
-
+        for antecedent ∈ star, atom ∈ atoms(conditions)
                 antecedentcopy = deepcopy(antecedent)
                 composeformulas!(antecedentcopy, atom)
 
                 antecedentcopy ∉ newstar && 
                 antecedentcopy ∉ star && push!(newstar, antecedentcopy) 
-            end      
         end
     end
     return newstar
 end
 
 
-
-
-# dummy function for entropy
 function entropy(
     y::AbstractVector{<:CLabel};
 )::Float32
@@ -141,7 +127,6 @@ end
 
 #= ================================================================================================================ =#
 
-# return the indexes of the covered instances
 function coveredindexes(
     φ::LeftmostConjunctiveForm, 
     X::PropositionalLogiset
@@ -149,15 +134,16 @@ function coveredindexes(
     return findall(z->z==1, interpret(φ, X))
 end
 
-
+ 
+# Ordina gli antecedenti ( formule del tipo LeftmostCF ) in base all' entropia
 function sorted_antecedents(
     star::Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}},
     X::PropositionalLogiset,
     y::Vector{<:CLabel}
 )
     entropyes = map(ind->(ind=>entropy(y[interpret(star[ind], X)])), 
-                                1:length(star))
-    
+                1:length(star))
+                
     sort!(entropyes, by=e->e.second)
     i_bests = first.(length(entropyes) > user_defined_max ? 
                             entropyes[1:user_defined_max] : entropyes)
@@ -178,7 +164,9 @@ function find_best_antecedent(
     bestentropy = Inf
     
     while true
-        newstar = specializestar(star, boundedconditions)
+
+        newstar = SPEC_VERSION == :old ? 
+            old_specializestar(star, boundedconditions) : specializestar(star, boundedconditions)
 
         isempty(newstar) && break   
         orderedantecedents_indexs, newbestentropy = sorted_antecedents(newstar, X, y)
@@ -190,8 +178,9 @@ function find_best_antecedent(
         star = newstar[orderedantecedents_indexs]
 
 
-        # Non si può fare meglio di così
+        # Attenzione qui
         # bestentropy ≤ 0.0 ? break : continue
+
     end
     return bestantecedent
 end
@@ -201,47 +190,32 @@ function sole_cn2(
     y::AbstractVector{CLabel};
     kwargs...
 )
-
     length(y) != nrow(X) && error("size of X and y mismatch")
-    
 
-    print("computing alphabet...")
-    boundedconditions = alphabet(X, [≤, ≥])
-    println(" end")
-    
+    println("SPEC_VERSION = $(SPEC_VERSION)")
+
+    boundedconditions = alphabet(X, [≤, ≥])    
     slice_tocover = collect(1:length(y))
-
-    current_X, current_y = X[slice_tocover, :], y[slice_tocover]
- 
+    
+    current_X = X[slice_tocover, :]
+    current_y = y[slice_tocover]
 
     rulelist = Vector{SoleModels.ClassificationRule}([])
-
     while length(slice_tocover) > 0
         
-        print("$(length(slice_tocover)) ")
+        # print("$(length(slice_tocover)) ")
         
         best_antecedent = find_best_antecedent(boundedconditions, current_X, current_y)
-        i_covered_relative = coveredindexes(best_antecedent, current_X)
-        most_common_class = _getmostcommon(current_y[i_covered_relative])
+        covered_offsets = coveredindexes(best_antecedent, current_X)
+        antecedentclass = _getmostcommon(current_y[covered_offsets])
 
-        # Virtually remove the instances
-        setdiff!(slice_tocover, slice_tocover[i_covered_relative])
-
-        current_X, current_y = X[slice_tocover, :], y[slice_tocover]
-
-        push!(rulelist, Rule(best_antecedent, most_common_class))
+        push!(rulelist, Rule(best_antecedent, antecedentclass))
+                
+        setdiff!(slice_tocover, slice_tocover[covered_offsets])        
+        current_X = X[slice_tocover, :]
+        current_y = y[slice_tocover]
     end        
     return DecisionList(rulelist, ⊤)
 
 end
-
-
-#= 
-    iris_df = DataFrame(load_iris())
-    X_df = iris_df[:, 1:(end-1)]
-    y = Vector{CLabel}(iris_df[:, end])
-    X_pl = PropositionalLogiset(X_df)
-=#
-
-
 
