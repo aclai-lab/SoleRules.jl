@@ -17,7 +17,10 @@ import SoleBase: CLabel
 import Base: ==, ∈
 
 # variabile temporaneamente globale
-global const user_defined_max = 2
+global user_defined_max = 3
+
+
+_getmostcommon( classlist ) = findmin(countmap(classlist))[2]
 
 
 function Base.:(==)(
@@ -38,12 +41,30 @@ function feature(
 end
 
 # TODO oppure composeformulas(φ, LeftmostConjunctiveForm(a)) ????
-function Base.push!(
+function composeformulas!(
     φ::LeftmostConjunctiveForm, 
     a::Atom
 )
     feature(value(a)) ∉ feature(φ) && push!(φ.children, a)
 end
+
+
+
+function smart_conditions(
+    bsc::BoundedScalarConditions,
+    φ::Formula
+
+)::Union{Bool,BoundedScalarConditions}
+
+    φ_features = feature(φ)
+    println("smart")
+
+    conds = [(meta_cond, vals) for (meta_cond, vals) ∈ bsc.grouped_featconditions 
+                if feature(meta_cond) ∉ φ_features]
+
+    return conds == [] ? false : BoundedScalarConditions{ScalarCondition}(conds)
+end
+
 
 
 function specializestar(
@@ -55,23 +76,63 @@ function specializestar(
         newstar = [LeftmostConjunctiveForm{Atom{ScalarCondition}}([atom]) for atom ∈ atoms(conditions)]
     else
         newstar = Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
-        for antecedent ∈ star, atom ∈ atoms(conditions)
-            antecedentcopy = deepcopy(antecedent)
-            push!(antecedentcopy, atom)
-            antecedentcopy ∉ newstar && push!(newstar, antecedentcopy)       
+        for antecedent ∈ star
+
+            (reducedconditions = smart_conditions(conditions, antecedent)) != false && continue
+            for atom ∈ atoms(reducedconditions)
+
+                antecedentcopy = deepcopy(antecedent)
+                composeformulas!(antecedentcopy, atom)
+
+                antecedentcopy ∉ newstar && 
+                antecedentcopy ∉ star && push!(newstar, antecedentcopy) 
+            end      
         end
     end
     return newstar
 end
 
 
+function new_specializestar(
+    star::Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}, 
+    conditions::BoundedScalarConditions;
+    kwargs...
+)
+    if length(star) == 0
+        newstar = [LeftmostConjunctiveForm{Atom{ScalarCondition}}([atom]) for atom ∈ atoms(conditions)]
+    else
+        newstar = Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
+        for antecedent ∈ star
+            
+            reducedconditions = smart_conditions(conditions, antecedent)
+            reducedconditions == false && continue 
+
+            for atom ∈ atoms(smart_conditions(conditions, antecedent))
+
+                antecedentcopy = deepcopy(antecedent)
+                composeformulas!(antecedentcopy, atom)
+
+                antecedentcopy ∉ newstar && 
+                antecedentcopy ∉ star && push!(newstar, antecedentcopy) 
+            end      
+        end
+    end
+    return newstar
+end
+
+
+
+
 # dummy function for entropy
 function entropy(
     y::AbstractVector{<:CLabel};
 )::Float32
+
+    length(y) == 0 && return Inf
+
     count = values(countmap(y))
-    length(count) == 1 && return 0.0     
-    
+    length(count) == 1 && return 0.0
+         
     logbase = length(count)
     prob = count ./ sum(count)
     return -sum(prob .* log.(logbase, prob))
@@ -94,15 +155,14 @@ function sorted_antecedents(
     X::PropositionalLogiset,
     y::Vector{<:CLabel}
 )
-    # entropyes = Vector(Pairs(antecedent_index, antecedent_entropy))
-    entropyes = map(ind -> (ind=>entropy(y[interpret(star[ind], X)])), 
+    entropyes = map(ind->(ind=>entropy(y[interpret(star[ind], X)])), 
                                 1:length(star))
-
+    
     sort!(entropyes, by=e->e.second)
     i_bests = first.(length(entropyes) > user_defined_max ? 
-                            entropyes[1:user_defined_max] : entropyes) 
-    bestentropy = second(entropyes[1])
-    
+                            entropyes[1:user_defined_max] : entropyes)
+
+    bestentropy = entropyes[1].second
     return (i_bests, bestentropy)
 end
 
@@ -113,52 +173,75 @@ function find_best_antecedent(
     X::PropositionalLogiset,
     y::AbstractVector{CLabel}
 )
-    star = Vector{LeftmostConjunctiveForm}([])
+    star = Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
+    bestantecedent = LeftmostConjunctiveForm([⊤])
     bestentropy = Inf
+    
     while true
-
         newstar = specializestar(star, boundedconditions)
-        isempty(newstar) && break                                                                           # Exit condition
-        # If Cᵢ is statistically significant and better than
-        # BEST_CPX by user-defined criteria when tested on E,
-        # Then replace the current value of BEST.CPX by Cᵢ.
 
-        # TODO include test for significance
-        i_orderedantecedents, newbestentropy = sorted_antecedents(newstar, X, y)
+        isempty(newstar) && break   
+        orderedantecedents_indexs, newbestentropy = sorted_antecedents(newstar, X, y)
         
         if newbestentropy < bestentropy
-            bestantecedent = newstar[i_orderedantecedents[1]] 
-            bestruleentropy = newbestentropy
+            bestantecedent = newstar[orderedantecedents_indexs[1]] 
+            bestentropy = newbestentropy
         end
+        star = newstar[orderedantecedents_indexs]
 
-        star = newstar[i_orderedantecedents]
+
+        # Non si può fare meglio di così
+        # bestentropy ≤ 0.0 ? break : continue
     end
-    return entropyes
+    return bestantecedent
 end
 
+function sole_cn2(
+    X::PropositionalLogiset,
+    y::AbstractVector{CLabel};
+    kwargs...
+)
 
-function exec()
+    length(y) != nrow(X) && error("size of X and y mismatch")
+    
 
-    df = DataFrame([1 2 3 ; 5 6 7; 8 9 10], :auto)
-    X = PropositionalLogiset(df)
+    print("computing alphabet...")
     boundedconditions = alphabet(X, [≤, ≥])
+    println(" end")
+    
+    slice_tocover = collect(1:length(y))
 
-    y = ["+","+","-"]
+    current_X, current_y = X[slice_tocover, :], y[slice_tocover]
+ 
+
+    rulelist = Vector{SoleModels.ClassificationRule}([])
+
+    while length(slice_tocover) > 0
         
-    star0 = Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
-    star1 = specializestar(star0, boundedconditions)
-    @show findbestantecedents(star1[1:4], PropositionalLogiset(df), y)
+        print("$(length(slice_tocover)) ")
+        
+        best_antecedent = find_best_antecedent(boundedconditions, current_X, current_y)
+        i_covered_relative = coveredindexes(best_antecedent, current_X)
+        most_common_class = _getmostcommon(current_y[i_covered_relative])
+
+        # Virtually remove the instances
+        setdiff!(slice_tocover, slice_tocover[i_covered_relative])
+
+        current_X, current_y = X[slice_tocover, :], y[slice_tocover]
+
+        push!(rulelist, Rule(best_antecedent, most_common_class))
+    end        
+    return DecisionList(rulelist, ⊤)
+
 end
 
 
 #= 
-
----- TODO ----
-
-
-Ho redirezionato molti comportamenti di PropositionalLogiset al suo table interno. 
-A proposito rinomina il dataset dentro in qualcosa che faccia capire che è una tabella. Tipo tabledataset, ad esempio.
-Ho aggiunto test così si capisce che cosa funziona e cosa non funziona. Aggiungici anche il codice che hai usato te per 
-testarlo, così i test diventano più robusti. https://docs.julialang.org/en/v1/stdlib/Test/
-
+    iris_df = DataFrame(load_iris())
+    X_df = iris_df[:, 1:(end-1)]
+    y = Vector{CLabel}(iris_df[:, end])
+    X_pl = PropositionalLogiset(X_df)
 =#
+
+
+

@@ -1,23 +1,24 @@
 Main:
 
 Generic:
-    ☐ Importare in Sole i risultati di orange . File picke? 
+    ☐ Importare in Sole i risultati di orange . File pickle? 
     ☐ Capire perché i risultati di sole differiscono da quelli di Orange
     ☐ Eliminare implementazione superflua cn2
+    ☐ Aggiornare confronto tra LmCF 
+        # (rimuovere confronto tramite Base.:(==))
+    ☐ Aggiungere selezione conditions con entropyMDL
 
 Utility:
     ☐ Implementing instances(PropositionalLogiset)
         ☐ Gestione errore in istanziazione PropositionalLogiset{DataFrame}(SubDataFrame)
         # già scritta soluzione temporanea
-SS
+
 Testing:
     ☐ Scrivere test che chiama CN2, e che valuta la qualità del risultato
     ✔ Verificare 100% accuratezza sul dataset di trainig ? @done(24-03-01 03:02)
     ☐ Divisione train/test come nei test di ModalDecisionTrees.jl, (vedi iris)
     ☐ Time (@time) 
-
-Future:
+Future: 
     ☐ Differenziare caso attributi discreti/categoriali
     # eltype.(eachcol(df))
-
 

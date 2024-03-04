@@ -200,8 +200,8 @@ function entropy(x)
     val = values(countmap(x))
     if length(val) == 1 return 0.0 end    
     logbase = length(val)
-    pi = val ./ sum(val)
-    return -sum( pi .* log.(logbase, pi) )
+    prob = val ./ sum(val)
+    return -sum( prob .* log.(logbase, prob) )
 end
 
 function complexcoverage(rulebody::RuleBody, examples)::Vector{Bool}
@@ -278,7 +278,9 @@ function CN2(
     current_y = @view y[:]
     
     slice_tocover = collect(1:length(y))
+    print("computing selectors...")
     selectors = computeselectors(X)
+    println(" end")
     rulelist = Vector{SoleModels.ClassificationRule}([])
     
 
