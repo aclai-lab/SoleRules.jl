@@ -23,18 +23,25 @@ global SPEC_VERSION = :new
 
 
 
-
-_getmostcommon(classlist) = findmin(countmap(classlist))[2]
-
-
-function Base.:(==)(
+# Check condition equivalence
+function checkconditionsequivalence(
     φ1::LeftmostLinearForm,
     φ2::LeftmostLinearForm,
 )::Bool
-    return typeof(φ1) == typeof(φ2) && 
-            length(φ1) == length(φ2) && 
-                !any(iszero, map( x-> x ∈ atoms(φ1), atoms(φ2)))
+    return  typeof(φ1) == typeof(φ2) &&
+            length(φ1) == length(φ2) &&
+            !any(iszero, map( x-> x ∈ atoms(φ1), atoms(φ2)))
 end
+
+
+
+function checkconditionsequivalence(
+    φ1::LeftmostLinearForm,
+    φs::Vector{LeftmostLinearForm},
+)::Bool
+    return any(φ_i->checkconditionsequivalence(φ_i, φ1), φ_i ∈ φs)
+end
+
 
 function feature(
     φ::LeftmostConjunctiveForm{Atom{ScalarCondition}}
@@ -44,71 +51,52 @@ function feature(
 end
 
 function composeformulas!(
-    φ::LeftmostConjunctiveForm, 
+    φ::LeftmostConjunctiveForm,
     a::Atom
 )
     feature(value(a)) ∉ feature(φ) && push!(φ.children, a)
 end
 
-function conjunctible_conditions(
+# return only conditions that make sense to be conjuncted with φ
+# If no conditions are founded -> return false
+
+function conjunctibleconds(
     bsc::BoundedScalarConditions,
     φ::Formula
 )::Union{Bool,BoundedScalarConditions}
 
     φ_features = feature(φ)
-    conds = [(meta_cond, vals) for (meta_cond, vals) ∈ bsc.grouped_featconditions 
+    conds = [(meta_cond, vals) for (meta_cond, vals) ∈ bsc.grouped_featconditions
                 if feature(meta_cond) ∉ φ_features]
     return conds == [] ? false : BoundedScalarConditions{ScalarCondition}(conds)
 end
 
-
 function specializestar(
-    star::Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}, 
+    star::Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}},
     conditions::BoundedScalarConditions;
     kwargs...
 )
     if length(star) == 0
-        newstar = [LeftmostConjunctiveForm{Atom{ScalarCondition}}([atom]) for atom ∈ atoms(conditions)]
+
+        newstar = map(a->LeftmostConjunctiveForm{Atom{ScalarCondition}}([a]), atoms(conditions))
+
     else
         newstar = Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
         for antecedent ∈ star
-
-            (reducedconditions = conjunctible_conditions(conditions, antecedent)) != false && continue
+            (reducedconditions = conjunctibleconds(conditions, antecedent)) == false && continue
             for atom ∈ atoms(reducedconditions)
 
                 antecedentcopy = deepcopy(antecedent)
                 composeformulas!(antecedentcopy, atom)
 
-                antecedentcopy ∉ newstar && 
-                antecedentcopy ∉ star && 
-                push!(newstar, antecedentcopy) 
-            end      
+                checkconditionsequivalence(antecedentcopy, antecedent) &&
+                checkconditionsequivalence(antecedentcopy, newstar ) &&
+                push!(newstar, antecedentcopy)
+            end
         end
     end
     return newstar
 end
-
-
-function old_specializestar(
-    star::Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}, 
-    conditions::BoundedScalarConditions;
-    kwargs...
-)
-    if length(star) == 0
-        newstar = [LeftmostConjunctiveForm{Atom{ScalarCondition}}([atom]) for atom ∈ atoms(conditions)]
-    else
-        newstar = Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
-        for antecedent ∈ star, atom ∈ atoms(conditions)
-                antecedentcopy = deepcopy(antecedent)
-                composeformulas!(antecedentcopy, atom)
-
-                antecedentcopy ∉ newstar && 
-                antecedentcopy ∉ star && push!(newstar, antecedentcopy) 
-        end
-    end
-    return newstar
-end
-
 
 function entropy(
     y::AbstractVector{<:CLabel};
@@ -118,41 +106,26 @@ function entropy(
 
     count = values(countmap(y))
     length(count) == 1 && return 0.0
-         
+
     logbase = length(count)
     prob = count ./ sum(count)
     return -sum(prob .* log.(logbase, prob))
 end
 
-
-#= ================================================================================================================ =#
-
-function coveredindexes(
-    φ::LeftmostConjunctiveForm, 
-    X::PropositionalLogiset
-)
-    return findall(z->z==1, interpret(φ, X))
-end
-
- 
 # Ordina gli antecedenti ( formule del tipo LeftmostCF ) in base all' entropia
 function sorted_antecedents(
     star::Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}},
     X::PropositionalLogiset,
     y::Vector{<:CLabel}
 )
-    entropyes = map(ind->(ind=>entropy(y[interpret(star[ind], X)])), 
-                1:length(star))
-                
+    entropyes = map(ind->(ind=>entropy(y[interpret(star[ind], X)])), 1:length(star))
     sort!(entropyes, by=e->e.second)
-    i_bests = first.(length(entropyes) > user_defined_max ? 
+    i_bests = first.(length(entropyes) > user_defined_max ?
                             entropyes[1:user_defined_max] : entropyes)
 
     bestentropy = entropyes[1].second
     return (i_bests, bestentropy)
 end
-
-
 
 function find_best_antecedent(
     boundedconditions::BoundedScalarConditions,
@@ -162,25 +135,19 @@ function find_best_antecedent(
     star = Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
     bestantecedent = LeftmostConjunctiveForm([⊤])
     bestentropy = Inf
-    
+
     while true
 
-        newstar = SPEC_VERSION == :old ? 
-            old_specializestar(star, boundedconditions) : specializestar(star, boundedconditions)
+        newstar = specializestar(star, boundedconditions)
 
-        isempty(newstar) && break   
+        isempty(newstar) && break
         orderedantecedents_indexs, newbestentropy = sorted_antecedents(newstar, X, y)
-        
+
         if newbestentropy < bestentropy
-            bestantecedent = newstar[orderedantecedents_indexs[1]] 
+            bestantecedent = newstar[orderedantecedents_indexs[1]]
             bestentropy = newbestentropy
         end
         star = newstar[orderedantecedents_indexs]
-
-
-        # Attenzione qui
-        # bestentropy ≤ 0.0 ? break : continue
-
     end
     return bestantecedent
 end
@@ -192,30 +159,25 @@ function sole_cn2(
 )
     length(y) != nrow(X) && error("size of X and y mismatch")
 
-    println("SPEC_VERSION = $(SPEC_VERSION)")
-
-    boundedconditions = alphabet(X, [≤, ≥])    
+    boundedconditions = SoleData.alphabet(X, [≤, ≥])
     slice_tocover = collect(1:length(y))
-    
+
     current_X = X[slice_tocover, :]
     current_y = y[slice_tocover]
 
     rulelist = Vector{SoleModels.ClassificationRule}([])
     while length(slice_tocover) > 0
-        
-        # print("$(length(slice_tocover)) ")
-        
+
         best_antecedent = find_best_antecedent(boundedconditions, current_X, current_y)
-        covered_offsets = coveredindexes(best_antecedent, current_X)
-        antecedentclass = _getmostcommon(current_y[covered_offsets])
+        covered_offsets = findall(z->z==1, interpret(best_antecedent, current_X))
+        antecedentclass = findmax(countmap(current_y[covered_offsets]))[2]
 
         push!(rulelist, Rule(best_antecedent, antecedentclass))
-                
-        setdiff!(slice_tocover, slice_tocover[covered_offsets])        
+        setdiff!(slice_tocover, slice_tocover[covered_offsets])
+
         current_X = X[slice_tocover, :]
         current_y = y[slice_tocover]
-    end        
+    end
     return DecisionList(rulelist, ⊤)
 
 end
-
