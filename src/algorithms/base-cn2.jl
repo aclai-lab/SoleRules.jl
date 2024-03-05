@@ -19,7 +19,7 @@ global test_ops = [≥, ≤]
 global user_defined_max = 3
 
 
-struct Selector    
+struct Selector
     att::Symbol # simil Feature
     val
     test_operator
@@ -37,8 +37,8 @@ end
         selectorlist = []
         attributes = names(df)
         for attribute ∈ attributes, test_op ∈ test_ops
-            map( x -> push!( selectorlist, Selector(Symbol(attribute), x, test_op)), 
-                        unique(df[:, attribute]) 
+            map( x -> push!( selectorlist, Selector(Symbol(attribute), x, test_op)),
+                        unique(df[:, attribute])
                 )
         end
         return selectorlist
@@ -53,7 +53,7 @@ end
     function selector2soleatom(sel::Set{Selector})::Tuple{Atom}
         return Tuple(selector2soleatom.(sel))
     end
-#######################################################################################################  
+#######################################################################################################
 
 struct RuleBody
     selectors::Set{Selector}
@@ -72,7 +72,7 @@ end
         end
             return true
     end
-        
+
     function Base.show(io::IO, r::RuleBody)
         nselector = length(getselectors(r))
         count = 1
@@ -84,7 +84,7 @@ end
             count = count + 1
         end
     end
-    
+
     getselectors(rb::RuleBody) = rb.selectors
     pushselector!(rule::RuleBody, selector::Selector) = push!(rule.selectors, selector)
     getattributes(r::RuleBody) = [varname(sel) for sel ∈ getselectors(r)]
@@ -96,8 +96,8 @@ end
         end
         return newrule
     end
-    
-#######################################################################################################  
+
+############################################################################################
 
 struct MyRule
     body::RuleBody
@@ -110,22 +110,22 @@ end
         println(io, " $(rule.body) ⟶ ($(rule.head))" )
     end
 
-    head(r::MyRule) = r.head 
+    head(r::MyRule) = r.head
     getselectors(mr::MyRule) = getselectors(mr.body)
     _AND(atoms) = length(atoms) > 1 ? LeftmostConjunctiveForm(∧(atoms)) : atoms[1]
-    
+
     function myrule2solerule(myrule::MyRule)
         selectors = getselectors(myrule)
         atoms = selector2soleatom(selectors)
-        
+
         _antecedent = _AND(atoms)
         _consequent = ConstantModel(head(myrule))
         return Rule(_antecedent, _consequent)
     end
 
-#######################################################################################################  
+############################################################################################
 
-struct Star 
+struct Star
     rules::Array{RuleBody}
 end
 
@@ -135,7 +135,7 @@ end
     pushrule!(star, rule) = push!(star.rules, rule)
     rules2star(ruleslist::Array{RuleBody}) = Star(ruleslist)
     rules(star::Star) = star.rules
-    
+
 
     function specializestar(star, selectors)
         if isempty(star)
@@ -147,7 +147,7 @@ end
                     newrule = appendselector(rule, selector)
                     if (newrule ∉ rules(newstar)) && (newrule != rule)
                         pushrule!(newstar, newrule)
-                    end 
+                    end
                 end
             end
         end
@@ -169,7 +169,7 @@ end
         end
     end
 
-#######################################################################################################  
+############################################################################################
 
 struct RuleList
     list::Vector{MyRule}
@@ -184,11 +184,11 @@ end
             print(rule)
         end
     end
-    
+
     function Base.getindex(rl::RuleList, index::Int)
         return rl.list[index]
     end
-########################################################################################################
+############################################################################################
 # End structures definition
 
 _getmostcommon( classlist ) = findmin(countmap(classlist))[2]
@@ -198,7 +198,7 @@ function entropy(x)
 
     if length(x) == 0 return Inf end
     val = values(countmap(x))
-    if length(val) == 1 return 0.0 end    
+    if length(val) == 1 return 0.0 end
     logbase = length(val)
     prob = val ./ sum(val)
     return -sum( prob .* log.(logbase, prob) )
@@ -210,13 +210,13 @@ function complexcoverage(rulebody::RuleBody, examples)::Vector{Bool}
 
     for selector ∈ getselectors(rulebody)
         test_op = test_operator(selector)
-        compcov = test_op.(examples[!, varname(selector)], 
+        compcov = test_op.(examples[!, varname(selector)],
                                         treshold(selector)
                                         ) .& compcov
     end
 
     return compcov
-end 
+end
 
 function entropy(rule, examples)
     coveredindexes = findall(x->x==1, complexcoverage(rule, examples) )
@@ -232,17 +232,17 @@ function findBestComplex(selectors, X, y)
     while true
 
         newstar = specializestar(star, selectors)
-    
+
         if isempty(newstar)
             break
         end
         entropydf = DataFrame(R=RuleBody[], E=Float32[])
         for rule ∈ newstar.rules
-                    
+
             coverage = complexcoverage(rule, X)
             coveredindexes = findall(x->x==1, coverage)
-            push!(entropydf, ( 
-                        rule, 
+            push!(entropydf, (
+                        rule,
                         entropy(y[coveredindexes]),
 
                     ))
@@ -273,14 +273,14 @@ function base_cn2(
     kwargs...
 )
     length(y) != nrow(X) && error("size of X and y mismatch")
-    
+
     current_X = @view X[:,:]
     current_y = @view y[:]
-    
+
     slice_tocover = collect(1:length(y))
     selectors = computeselectors(X)
     rulelist = Vector{SoleModels.ClassificationRule}([])
-    
+
 
     while length(slice_tocover) > 0
         bestcomplex = findBestComplex(selectors, current_X, current_y)
@@ -288,15 +288,11 @@ function base_cn2(
         coveredindexes = findall(x->x==1, coverage)
         mostcommonclass = _getmostcommon(current_y[coveredindexes])
         push!(rulelist, myrule2solerule(MyRule(bestcomplex, mostcommonclass)))
-        
+
         # Virtually remove the instances
         setdiff!(slice_tocover, slice_tocover[coveredindexes])
         current_X = @view X[slice_tocover, :]
         current_y = @view y[slice_tocover]
-    end        
+    end
     return DecisionList(rulelist, ⊤)
 end
-
-
-
-

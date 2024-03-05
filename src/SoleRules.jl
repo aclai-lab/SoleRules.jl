@@ -78,7 +78,7 @@ export patternbase
 export fpgrowth, @fpoptimize
 
 
-include("algorithms/my-cn2.jl")
+include("algorithms/base-cn2.jl")
 
 export CN2
 

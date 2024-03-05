@@ -33,8 +33,6 @@ function checkconditionsequivalence(
             !any(iszero, map( x-> x ∈ atoms(φ1), atoms(φ2)))
 end
 
-
-
 function checkconditionsequivalence(
     φ1::LeftmostLinearForm,
     φs::Vector{LeftmostLinearForm},
@@ -118,22 +116,22 @@ function sorted_antecedents(
     X::PropositionalLogiset,
     y::Vector{<:CLabel}
 )
-    entropyes = map(ind->(ind=>entropy(y[interpret(star[ind], X)])), 1:length(star))
-    sort!(entropyes, by=e->e.second)
-    i_bests = first.(length(entropyes) > user_defined_max ?
-                            entropyes[1:user_defined_max] : entropyes)
+    antsentropy = map(ind->(ind=>entropy(y[interpret(star[ind], X)])), 1:length(star))
+    sort!(antsentropy, by=e->e.second)
+    i_bests = first.(length(antsentropy) > user_defined_max ?
+                antsentropy[1:user_defined_max] : antsentropy)
 
-    bestentropy = entropyes[1].second
+    bestentropy = antsentropy[1].second
     return (i_bests, bestentropy)
 end
 
-function find_best_antecedent(
+function bestantecedent(
     boundedconditions::BoundedScalarConditions,
     X::PropositionalLogiset,
     y::AbstractVector{CLabel}
 )
     star = Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
-    bestantecedent = LeftmostConjunctiveForm([⊤])
+    best_antecedent = LeftmostConjunctiveForm([⊤])
     bestentropy = Inf
 
     while true
@@ -144,12 +142,12 @@ function find_best_antecedent(
         orderedantecedents_indexs, newbestentropy = sorted_antecedents(newstar, X, y)
 
         if newbestentropy < bestentropy
-            bestantecedent = newstar[orderedantecedents_indexs[1]]
+            best_antecedent = newstar[orderedantecedents_indexs[1]]
             bestentropy = newbestentropy
         end
         star = newstar[orderedantecedents_indexs]
     end
-    return bestantecedent
+    return best_antecedent
 end
 
 function sole_cn2(
@@ -168,7 +166,7 @@ function sole_cn2(
     rulelist = Vector{SoleModels.ClassificationRule}([])
     while length(slice_tocover) > 0
 
-        best_antecedent = find_best_antecedent(boundedconditions, current_X, current_y)
+        best_antecedent = bestantecedent(boundedconditions, current_X, current_y)
         covered_offsets = findall(z->z==1, interpret(best_antecedent, current_X))
         antecedentclass = findmax(countmap(current_y[covered_offsets]))[2]
 
