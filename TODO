@@ -1,13 +1,10 @@
 Main:
 
 Generic:
-    ☐ Importare in Sole i risultati di orange . File pickle? 
-    ☐ Capire perché i risultati di sole differiscono da quelli di Orange
     ☐ Eliminare implementazione superflua cn2
     ✔ Aggiornare confronto tra LmCF @done(24-03-04 19:36)
     # (rimuovere confronto tramite Base.:(==))
-    ☐ Parlare con Giò di possibile tabella [regola -> valutazione]
-    ☐ Aggiungere selezione conditions con entropyMDL
+☐ Aggiungere selezione conditions con entropyMDL
 
 
 Utility:

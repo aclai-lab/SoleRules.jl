@@ -22,7 +22,6 @@ global user_defined_max = 3
 global SPEC_VERSION = :new
 
 
-
 # Check condition equivalence
 function checkconditionsequivalence(
     φ1::LeftmostLinearForm,
@@ -176,6 +175,8 @@ function sole_cn2(
         current_X = X[slice_tocover, :]
         current_y = y[slice_tocover]
     end
-    return DecisionList(rulelist, ⊤)
+
+    defaultconsequent = findmax(countmap(y))[2]
+    return DecisionList(rulelist, Rule(TOP, defaultconsequent))
 
 end
