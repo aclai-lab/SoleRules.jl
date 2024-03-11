@@ -68,6 +68,35 @@ function conjunctibleconds(
     return conds == [] ? false : BoundedScalarConditions{ScalarCondition}(conds)
 end
 
+
+
+
+function oldversion_specializestar(
+    star::Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}},
+    conditions::BoundedScalarConditions;
+    kwargs...
+)
+    if length(star) == 0
+        newstar = [LeftmostConjunctiveForm{Atom{ScalarCondition}}([atom]) for atom ∈ atoms(conditions)]
+    else
+        newstar = Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
+        for antecedent ∈ star
+
+            (reducedconditions = smart_conditions(conditions, antecedent)) != false && continue
+            for atom ∈ atoms(reducedconditions)
+                antecedentcopy = deepcopy(antecedent)
+                composeformulas!(antecedentcopy, atom)
+                newstar = map(a->LeftmostConjunctiveForm{Atom{ScalarCondition}}([a]), atoms(conditions))
+
+                antecedentcopy ∉ newstar &&
+                antecedentcopy ∉ star && push!(newstar, antecedentcopy)
+            end
+        end
+    end
+    return newstar
+end
+
+
 function specializestar(
     star::Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}},
     conditions::BoundedScalarConditions;

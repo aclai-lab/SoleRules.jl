@@ -2,17 +2,17 @@ Main:
 
 Generic:
     ☐ Eliminare implementazione superflua cn2
+        ☐ arrivare a due implementazioni uguali 
+        ☐ Testing
     ✔ Aggiornare confronto tra LmCF @done(24-03-04 19:36)
     # (rimuovere confronto tramite Base.:(==))
-☐ Aggiungere selezione conditions con entropyMDL
+    ☐ Aggiungere selezione conditions con entropyMDL
 
 
 Utility:
     ✔ Implementing instances(PropositionalLogiset) @done(24-03-04 17:11)
         ✔ Gestione errore in istanziazione PropositionalLogiset{DataFrame}(SubDataFrame) @done(24-03-04 17:11)
-        # già scritta soluzione temporanea
-    ☐ Implementare parser orange-style decision list
-    
+        # già scritta soluzione temporanea    
 
 Testing:
     ☐ Scrivere test che chiama CN2, e che valuta la qualità del risultato
@@ -23,7 +23,7 @@ Testing:
 Future: 
     # eltype.(eachcol(df))
     ☐ Differenziare caso attributi discreti/categoriali
-    ☐ Aggiungere campo supp_labels (vettore)
+    ☐ Aggiungere campo supporting_labels (vettore)
     # Vettore delle labels delle istanze su cui la regola è costruita (ovvero, quelle che non sono coperte dalle regole precedenti), e nel 
     # info del constant model ci metti un campo supp_labels con le labels delle istanze che, tra queste, sono coperte dalla regola. 
     ☐ Aggiungere campo predicted_labels (forse)
