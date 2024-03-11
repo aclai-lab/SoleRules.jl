@@ -74,7 +74,6 @@ end
 function oldversion_specializestar(
     star::Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}},
     conditions::BoundedScalarConditions;
-    kwargs...
 )
     if length(star) == 0
         newstar = [LeftmostConjunctiveForm{Atom{ScalarCondition}}([atom]) for atom ∈ atoms(conditions)]
@@ -100,7 +99,6 @@ end
 function specializestar(
     star::Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}},
     conditions::BoundedScalarConditions;
-    kwargs...
 )
     if length(star) == 0
 
@@ -142,14 +140,17 @@ end
 function sorted_antecedents(
     star::Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}},
     X::PropositionalLogiset,
-    y::Vector{<:CLabel}
+    y::Vector{<:CLabel},
+    user_defined_max
 )
-    antsentropy = map(ind->(ind=>entropy(y[interpret(star[ind], X)])), 1:length(star))
-    sort!(antsentropy, by=e->e.second)
-    i_bests = first.(length(antsentropy) > user_defined_max ?
-                antsentropy[1:user_defined_max] : antsentropy)
+    antd_entropies = map(antd->begin
+            sat_idxs = interpret(antd, X)
+            entropy(y[sat_idxs])
+        end, star)
+    
+    i_bests = partialsortperm(antd_entropies, 1:min(user_defined_max, length(antd_entropies)))
 
-    bestentropy = antsentropy[1].second
+    bestentropy = antd_entropies[i_bests[1]]
     return (i_bests, bestentropy)
 end
 
@@ -162,18 +163,20 @@ function bestantecedent(
     best_antecedent = LeftmostConjunctiveForm([⊤])
     bestentropy = Inf
 
+    # Beam search of rank `user_defined_max``
     while true
 
         newstar = specializestar(star, boundedconditions)
 
         isempty(newstar) && break
-        orderedantecedents_indexs, newbestentropy = sorted_antecedents(newstar, X, y)
+        antecedents_sortperm, newbestentropy = sorted_antecedents(
+            newstar, X, y, user_defined_max)
 
         if newbestentropy < bestentropy
-            best_antecedent = newstar[orderedantecedents_indexs[1]]
+            best_antecedent = newstar[antecedents_sortperm[1]]
             bestentropy = newbestentropy
         end
-        star = newstar[orderedantecedents_indexs]
+        star = newstar[antecedents_sortperm]
     end
     return best_antecedent
 end
@@ -181,7 +184,6 @@ end
 function sole_cn2(
     X::PropositionalLogiset,
     y::AbstractVector{CLabel};
-    kwargs...
 )
     length(y) != nrow(X) && error("size of X and y mismatch")
 

@@ -126,15 +126,15 @@ end
 ############################################################################################
 
 struct Star
-    rules::Array{RuleBody}
+    antecedents::Array{RuleBody}
 end
 
 # >>>
 
-    starsize(star::Star) = length(star.rules)
-    pushrule!(star, rule) = push!(star.rules, rule)
-    rules2star(ruleslist::Array{RuleBody}) = Star(ruleslist)
-    rules(star::Star) = star.rules
+    starsize(star::Star) = length(star.antecedents)
+    pushrule!(star, rule) = push!(star.antecedents, rule)
+    rulebodies2star(ruleslist::Array{RuleBody}) = Star(ruleslist)
+    antecedents(star::Star) = star.antecedents
 
 
     function specializestar(star, selectors)
@@ -142,10 +142,10 @@ end
             newstar = Star([RuleBody(Set([sel])) for sel ∈ selectors])
         else
             newstar = Star([])
-            for rule ∈ rules(star)
+            for rule ∈ antecedents(star)
                 for selector ∈ selectors
                     newrule = appendselector(rule, selector)
-                    if (newrule ∉ rules(newstar)) && (newrule != rule)
+                    if (newrule ∉ antecedents(newstar)) && (newrule != rule)
                         pushrule!(newstar, newrule)
                     end
                 end
@@ -154,11 +154,11 @@ end
         return newstar
     end
 
-    Base.isempty(star::Star) = (length(star.rules) == 0)
+    Base.isempty(star::Star) = (length(star.antecedents) == 0)
 
     function Base.show(io::IO, s::Star)
         println("Star:")
-        for r in rules(s)
+        for r in antecedents(s)
             print(" • ")
             println(io,r)
         end
@@ -178,7 +178,7 @@ end
 # >>>
 
     function Base.show(io::IO, rl::RuleList)
-        println("Rules: ( ordered )")
+        println("antecedents: ( ordered )")
         for rule ∈ rl.list
             print(io, " * ")
             print(rule)
@@ -191,7 +191,6 @@ end
 ############################################################################################
 # End structures definition
 
-_getmostcommon( classlist ) = findmin(countmap(classlist))[2]
 symbolnames(X_df::AbstractDataFrame) = Symbol.(names(X_df))
 
 function entropy(x)
@@ -237,12 +236,11 @@ function findBestComplex(selectors, X, y)
             break
         end
         entropydf = DataFrame(R=RuleBody[], E=Float32[])
-        for rule ∈ newstar.rules
-
-            coverage = complexcoverage(rule, X)
+        for antd ∈ newstar.antecedents
+            coverage = complexcoverage(antd, X)
             coveredindexes = findall(x->x==1, coverage)
             push!(entropydf, (
-                        rule,
+                        antd,
                         entropy(y[coveredindexes]),
 
                     ))
@@ -255,14 +253,14 @@ function findBestComplex(selectors, X, y)
         if nrow(entropydf) > user_defined_max
             entropydf = entropydf[1:user_defined_max, :]
         end
-        star = rules2star(entropydf[:, :R])
+        star = rulebodies2star(entropydf[:, :R])
     end
 return bestrule
 end
 
-function _getmostcommon( classlist )
+function _getmostcommon(classlist)
     occurrence = countmap(classlist)
-    return findmin(occurrence)[2]
+    return findmax(occurrence)[2]
 end
 
 
@@ -270,7 +268,6 @@ end
 function base_cn2(
     X::AbstractDataFrame,
     y::AbstractVector{CLabel};
-    kwargs...
 )
     length(y) != nrow(X) && error("size of X and y mismatch")
 
