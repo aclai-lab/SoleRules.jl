@@ -260,7 +260,7 @@ function base_beamsearch(
     y::Vector{CLabel};
     beam_width=3
 )
-    best_antecedent = RuleBody([])
+    best_antecedent = nothing
     bestentropy = entropy(y)
 
     newstar = Star([])
@@ -303,11 +303,15 @@ function base_cn2(
     current_y = y[:]
 
     rulelist = Rule[]
-    while length(slice_tocover) > 0
+    while true
 
         # @show slice_tocover
         best_antecedent = base_beamsearch( current_X, current_y)
-        covered_indxs = findall(x->x==1, base_interpret(best_antecedent, current_X))
+        # Exit condition
+        isnothing(best_antecedent) && break
+
+        covered_indxs = findall(x->x==1,
+                            base_interpret(best_antecedent, current_X))
         antecedent_class = mostcommonvalue(current_y[covered_indxs])
         push!(rulelist, convert_solerule(best_antecedent, antecedent_class))
 
@@ -316,7 +320,9 @@ function base_cn2(
         current_X = X[slice_tocover, :]
         current_y = y[slice_tocover]
     end
-    return DecisionList(rulelist, ⊤)
+    defaultrule_consequent = current_y[begin]
+    defaultrule = Rule(⊤, defaultrule_consequent)
+    return DecisionList(rulelist, defaultrule)
 end
 
 # X...,y = load_iris()

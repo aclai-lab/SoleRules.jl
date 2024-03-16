@@ -22,6 +22,12 @@ using MLJ: load_iris
 global beam_width = 3
 global SPEC_VERSION = :new
 
+function istop(
+    lmlf::LeftmostLinearForm
+)
+    return children(lmlf ) == [⊤]
+end
+
 
 function entropy(
     y::AbstractVector{<:CLabel};
@@ -153,7 +159,7 @@ function beamsearch(
     y::AbstractVector{CLabel},
 )
     best_antecedent = LeftmostConjunctiveForm([⊤])
-    bestentropy = Inf
+    bestentropy = entropy(y)
 
     newstar = Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
     while true
@@ -197,13 +203,17 @@ function sole_cn2(
     current_y = y[slice_tocover]
 
     rulelist = Rule[]
-    while length(slice_tocover) > 0
+    while true
         currentrule_distribution = Dict(unique(y) .=> 0)
 
         best_antecedent = beamsearch(current_X, current_y)
+        @show best_antecedent
+        # Exit condition
+        istop(best_antecedent) && break
         covered_offsets = findall(z->z==1,
                             interpret(best_antecedent, current_X))
-
+        @show current_X
+        @show covered_offsets
         covered_y = current_y[covered_offsets]
         for c in covered_y
             currentrule_distribution[c] += 1
@@ -221,8 +231,9 @@ function sole_cn2(
         current_y = y[slice_tocover]
     end
 
-    defaultconsequent = findmax(countmap(y))[2]
-    return DecisionList(rulelist, Rule(TOP, defaultconsequent))
+    defaultrule_consequent = current_y[begin]
+    defaultrule = Rule(⊤, defaultrule_consequent)
+    return DecisionList(rulelist, defaultrule)
 
 
 end
