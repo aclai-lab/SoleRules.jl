@@ -2,8 +2,12 @@ Main:
 
 Generic:
     ☐ Eliminare implementazione superflua cn2
-        ☐ arrivare a due implementazioni uguali 
+        ☐ arrivare a due implementazioni uguali
+            ✔ sole_cn2 as orange_cn2(simple selector version) @done(24-03-14 20:39)
+            ✔ base_cn2 as orange_cn2(simple selector version) @done(24-03-16 12:00)
         ☐ Testing
+
+    ☐ MLJ interface for cn2
     ✔ Aggiornare confronto tra LmCF @done(24-03-04 19:36)
     # (rimuovere confronto tramite Base.:(==))
     ☐ Aggiungere selezione conditions con entropyMDL

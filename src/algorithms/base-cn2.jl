@@ -1,23 +1,20 @@
 using SoleData
 using SoleLogics
+using SoleRules
 using SoleBase
 using SoleModels
 using DataFrames
+using Debugger
 using Random
 using StatsBase: countmap
-# using Debugger
-# using CSV
-# db = Debugger
 import SoleLogics: LogicalInstance, Formula, LeftmostLinearForm
 import SoleModels: Rule, AbstractModel, ConstantModel
 import SoleBase: CLabel
 import SoleData: PropositionalLogiset, BoundedScalarConditions
 import SoleData: features, UnivariateSymbolValue
+using MLJ: load_iris
 
 global bestruleentropy = 2.0
-global test_ops = [≥, ≤]
-global user_defined_max = 3
-
 
 struct Selector
     att::Symbol # simil Feature
@@ -32,31 +29,18 @@ end
     varname(sel::Selector) = sel.att
     treshold(sel::Selector) = sel.val # che poi non è una treshold :)
 
-    function computeselectors(df)
 
-        selectorlist = []
-        attributes = names(df)
-        for attribute ∈ attributes, test_op ∈ test_ops
-            map( x -> push!( selectorlist, Selector(Symbol(attribute), x, test_op)),
-                        unique(df[:, attribute])
-                )
-        end
-        return selectorlist
-    end
 
-    function selector2soleatom(sel::Selector)::Atom
+    function selector2soleatom(sel::Selector)::Atom{ScalarCondition}
         feature = UnivariateSymbolValue(varname(sel))
         tresh = treshold(sel)
         test_op = test_operator(sel)
         return Atom(ScalarCondition(feature, test_op, tresh))
     end
-    function selector2soleatom(sel::Set{Selector})::Tuple{Atom}
-        return Tuple(selector2soleatom.(sel))
-    end
 #######################################################################################################
 
 struct RuleBody
-    selectors::Set{Selector}
+    selectors::Vector{Selector}
 end
 
 # >>>
@@ -74,7 +58,7 @@ end
     end
 
     function Base.show(io::IO, r::RuleBody)
-        nselector = length(getselectors(r))
+        nselector = length(selectors(r))
         count = 1
         for sel in r.selectors
             print(io, "$sel")
@@ -85,16 +69,46 @@ end
         end
     end
 
-    getselectors(rb::RuleBody) = rb.selectors
+    selectors(rb::RuleBody) = rb.selectors
     pushselector!(rule::RuleBody, selector::Selector) = push!(rule.selectors, selector)
-    getattributes(r::RuleBody) = [varname(sel) for sel ∈ getselectors(r)]
+    getattributes(r::RuleBody) = [varname(sel) for sel ∈ selectors(r)]
 
-    function appendselector(rule::RuleBody, s::Selector)
-        newrule = deepcopy(rule)
-        if s.att ∉ getattributes(rule)
-            pushselector!(newrule, s)
+    function base_interpret(
+        antecedent::RuleBody,
+        X::AbstractDataFrame
+    )::Vector{Bool}
+
+        antecedent_coverage = ones(Bool, nrow(X))
+
+        for selector ∈ selectors(antecedent)
+            test_op = test_operator(selector)
+            selector_coverage = test_op.(X[:, varname(selector)],
+                                        treshold(selector)
+                                            )
+            antecedent_coverage = antecedent_coverage .& selector_coverage
         end
-        return newrule
+        return antecedent_coverage
+    end
+
+    function find_new_selectors(
+        X::AbstractDataFrame,
+        candidate_antecedent::RuleBody=RuleBody([])
+    )::Vector{Selector}
+        # candidate_antecedent == [] => sat_indexes = [1,1,1,...,1]
+        sat_indexes = base_interpret(candidate_antecedent, X)
+        X_covered = X[sat_indexes, :]
+        # @show X_covered
+
+        selectorlist = Vector{Selector}([])
+        test_ops = [≤, ≥]
+        attributes = names(X)
+        for attribute ∈ attributes, test_op ∈ test_ops
+            map( x -> push!( selectorlist, Selector(Symbol(attribute), x, test_op)),
+                        sort(unique(X_covered[:, attribute]))
+                )
+        end
+        possible_selectorlist = [_s for _s in selectorlist if _s ∉ selectors(candidate_antecedent)]
+        return possible_selectorlist
     end
 
 ############################################################################################
@@ -109,18 +123,19 @@ end
     function Base.show(io::IO, rule::MyRule)
         println(io, " $(rule.body) ⟶ ($(rule.head))" )
     end
-
     head(r::MyRule) = r.head
-    getselectors(mr::MyRule) = getselectors(mr.body)
-    _AND(atoms) = length(atoms) > 1 ? LeftmostConjunctiveForm(∧(atoms)) : atoms[1]
+    body(r::MyRule) = r.body
+    selectors(mr::MyRule) = selectors(body(mr))
 
-    function myrule2solerule(myrule::MyRule)
-        selectors = getselectors(myrule)
-        atoms = selector2soleatom(selectors)
-
-        _antecedent = _AND(atoms)
-        _consequent = ConstantModel(head(myrule))
-        return Rule(_antecedent, _consequent)
+    function convert_solerule(
+        antecedent::RuleBody,
+        consequent
+    )::Rule
+        _atoms = selector2soleatom.(selectors(antecedent))
+        sole_antecedent = length(_atoms) > 0 ? LeftmostConjunctiveForm(_atoms) :
+                                                    LeftmostConjunctiveForm([⊤])
+        sole_consequent = ConstantModel(consequent)
+        return Rule(sole_antecedent, sole_consequent)
     end
 
 ############################################################################################
@@ -135,23 +150,41 @@ end
     pushrule!(star, rule) = push!(star.antecedents, rule)
     rulebodies2star(ruleslist::Array{RuleBody}) = Star(ruleslist)
     antecedents(star::Star) = star.antecedents
+    selectors(star::Star) = star.antecedents
 
 
-    function specializestar(star, selectors)
-        if isempty(star)
-            newstar = Star([RuleBody(Set([sel])) for sel ∈ selectors])
+    function base_refine_antecedents(
+        star::Star,
+        X::AbstractDataFrame
+    )::Star
+        if starsize(star) == 0
+            # Se la stella è vuota crea nuove regole da inserire ( una per ogni selector)
+            possible_selectors = find_new_selectors(X)
+            possible_antecedents = map(sel->RuleBody([sel]), possible_selectors)
+
+            # printstyled("atoms(ant) | EMPTY\n", bold=true, color=:red)
+            # @showlc possible_selectors :blue
+            return Star(possible_antecedents)
         else
-            newstar = Star([])
-            for rule ∈ antecedents(star)
-                for selector ∈ selectors
-                    newrule = appendselector(rule, selector)
-                    if (newrule ∉ antecedents(newstar)) && (newrule != rule)
-                        pushrule!(newstar, newrule)
-                    end
+            # Se la stella non è vuota specializza tutti gli antecedenti
+            refined_antecedents = Vector{RuleBody}([])
+            for _antecedent in selectors(star)
+                possible_selectors = find_new_selectors(X, _antecedent)
+                isempty(possible_selectors) &&
+                    return Star([])
+
+                # @showlc selectors(_antecedent) :red
+                # @showlc possible_selectors :blue
+
+                # if exist possible selectors
+                for _selector in possible_selectors
+                    new_antecedent = deepcopy(_antecedent)
+                    pushselector!(new_antecedent, _selector)
+                    push!(refined_antecedents, new_antecedent)
                 end
             end
         end
-        return newstar
+        return Star(refined_antecedents)
     end
 
     Base.isempty(star::Star) = (length(star.antecedents) == 0)
@@ -176,7 +209,6 @@ struct RuleList
 end
 
 # >>>
-
     function Base.show(io::IO, rl::RuleList)
         println("antecedents: ( ordered )")
         for rule ∈ rl.list
@@ -184,7 +216,6 @@ end
             print(rule)
         end
     end
-
     function Base.getindex(rl::RuleList, index::Int)
         return rl.list[index]
     end
@@ -195,101 +226,104 @@ symbolnames(X_df::AbstractDataFrame) = Symbol.(names(X_df))
 
 function entropy(x)
 
-    if length(x) == 0 return Inf end
-    val = values(countmap(x))
-    if length(val) == 1 return 0.0 end
-    logbase = length(val)
-    prob = val ./ sum(val)
+    length(x) == 0 &&
+        return Inf
+    v = values(countmap(x))
+    (logbase = length(v)) == 1 &&
+        return 0.0
+    prob = v ./ sum(v)
     return -sum( prob .* log.(logbase, prob) )
 end
 
-function complexcoverage(rulebody::RuleBody, examples)::Vector{Bool}
+function base_sortedantecedents(
+    star::Star,
+    X::AbstractDataFrame,
+    y::Vector{CLabel},
+    beam_width::Int64
+)
+    starsize(star) == 0 && return [], Inf
 
-    compcov = ones(Bool, nrow(examples))
+    antd_entropies = map( sel->begin
+        sat_indexes = base_interpret(sel, X)
+        entropy(y[sat_indexes])
+    end, antecedents(star))
 
-    for selector ∈ getselectors(rulebody)
-        test_op = test_operator(selector)
-        compcov = test_op.(examples[!, varname(selector)],
-                                        treshold(selector)
-                                        ) .& compcov
-    end
-
-    return compcov
+    i_bests = partialsortperm(antd_entropies, 1:min(beam_width, length(antd_entropies)))
+    bestentropy = antd_entropies[i_bests[1]]
+    return (i_bests, bestentropy)
 end
 
-function entropy(rule, examples)
-    coveredindexes = findall(x->x==1, complexcoverage(rule, examples) )
-    coveredclasses = examples[coveredindexes, end]
-    return entropy(coveredclasses)
-end
 
-function findBestComplex(selectors, X, y)
 
-    star = Star([])
-    bestrule = RuleBody(Set([]))
-    bestruleentropy = 2
+function base_beamsearch(
+    X::AbstractDataFrame,
+    y::Vector{CLabel};
+    beam_width=3
+)
+    best_antecedent = RuleBody([])
+    bestentropy = entropy(y)
+
+    newstar = Star([])
     while true
 
-        newstar = specializestar(star, selectors)
+        (star, newstar) = newstar, Star([])
+        # @showlc selectors(star) :green
+        newstar = base_refine_antecedents(star, X)
+        # Exit condition
+        isempty(newstar) && break
 
-        if isempty(newstar)
-            break
-        end
-        entropydf = DataFrame(R=RuleBody[], E=Float32[])
-        for antd ∈ newstar.antecedents
-            coverage = complexcoverage(antd, X)
-            coveredindexes = findall(x->x==1, coverage)
-            push!(entropydf, (
-                        antd,
-                        entropy(y[coveredindexes]),
+        _sortperm, newbestentropy = base_sortedantecedents(newstar, X, y, beam_width)
+        newstar = antecedents(newstar)[_sortperm] |> Star
 
-                    ))
+        if newbestentropy < bestentropy
+            best_antecedent = newstar.antecedents[begin]
+            bestentropy = newbestentropy
         end
-        sort!(entropydf, [:E])
-        newbestruleentropy = entropydf[1, :E]
-        if newbestruleentropy < bestruleentropy
-            bestrule, bestruleentropy = entropydf[1, :]
-        end
-        if nrow(entropydf) > user_defined_max
-            entropydf = entropydf[1:user_defined_max, :]
-        end
-        star = rulebodies2star(entropydf[:, :R])
+
+        # readline()
+        # print("\033c")
     end
-return bestrule
+return best_antecedent
 end
 
-function _getmostcommon(classlist)
+function mostcommonvalue(classlist)
     occurrence = countmap(classlist)
     return findmax(occurrence)[2]
 end
 
 
-
 function base_cn2(
     X::AbstractDataFrame,
-    y::AbstractVector{CLabel};
+    y::Vector{CLabel}
 )
     length(y) != nrow(X) && error("size of X and y mismatch")
-
-    current_X = @view X[:,:]
-    current_y = @view y[:]
-
     slice_tocover = collect(1:length(y))
-    selectors = computeselectors(X)
-    rulelist = Vector{SoleModels.ClassificationRule}([])
 
+    current_X = X[:,:]
+    current_y = y[:]
 
+    rulelist = Rule[]
     while length(slice_tocover) > 0
-        bestcomplex = findBestComplex(selectors, current_X, current_y)
-        coverage = complexcoverage(bestcomplex, current_X)
-        coveredindexes = findall(x->x==1, coverage)
-        mostcommonclass = _getmostcommon(current_y[coveredindexes])
-        push!(rulelist, myrule2solerule(MyRule(bestcomplex, mostcommonclass)))
+
+        # @show slice_tocover
+        best_antecedent = base_beamsearch( current_X, current_y)
+        covered_indxs = findall(x->x==1, base_interpret(best_antecedent, current_X))
+        antecedent_class = mostcommonvalue(current_y[covered_indxs])
+        push!(rulelist, convert_solerule(best_antecedent, antecedent_class))
 
         # Virtually remove the instances
-        setdiff!(slice_tocover, slice_tocover[coveredindexes])
-        current_X = @view X[slice_tocover, :]
-        current_y = @view y[slice_tocover]
+        setdiff!(slice_tocover, slice_tocover[covered_indxs])
+        current_X = X[slice_tocover, :]
+        current_y = y[slice_tocover]
     end
     return DecisionList(rulelist, ⊤)
 end
+
+# X...,y = load_iris()
+# X_df = DataFrame(X)
+# y = Vector{CLabel}(y)
+
+
+# mask = [1,2,3,4, 51,52,53,54, 101,102,103,104]
+# X_m = X_df[mask, :]
+# y_m = y[mask]
