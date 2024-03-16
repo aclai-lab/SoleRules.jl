@@ -22,22 +22,14 @@ using MLJ: load_iris
 global beam_width = 3
 global SPEC_VERSION = :new
 
-function istop(
-    lmlf::LeftmostLinearForm
-)
-    return children(lmlf ) == [⊤]
-end
-
-
+istop(lmlf::LeftmostLinearForm) = children(lmlf) == [⊤]
 function entropy(
     y::AbstractVector{<:CLabel};
 )::Float32
 
     length(y) == 0 && return Inf
-
     count = values(countmap(y))
     length(count) == 1 && return 0.0
-
     logbase = length(count)
     prob = count ./ sum(count)
     return -sum(prob .* log.(logbase, prob))
@@ -52,13 +44,6 @@ function checkconditionsequivalence(
             !any(iszero, map( x-> x ∈ atoms(φ1), atoms(φ2)))
 end
 
-function checkconditionsequivalence(
-    φ1::LeftmostConjunctiveForm{Atom{ScalarCondition}},
-    φs::Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}},
-)::Bool
-    return any(φ_i->checkconditionsequivalence(φ_i, φ1), φs)
-end
-
 
 function feature(
     φ::LeftmostConjunctiveForm{Atom{ScalarCondition}}
@@ -67,25 +52,16 @@ function feature(
     return feature.(conditions)
 end
 
-function composeformulas!(
-    φ::LeftmostConjunctiveForm,
-    a::Atom
-)
-    if feature(value(a)) ∉ feature(φ)
-        push!(φ.children, a)
-    else return false end
-end
+# function conjunctibleconds(
+#     bsc::BoundedScalarConditions,
+#     φ::Formula
+# )::Union{Bool,BoundedScalarConditions}
 
-function conjunctibleconds(
-    bsc::BoundedScalarConditions,
-    φ::Formula
-)::Union{Bool,BoundedScalarConditions}
-
-    φ_features = feature(φ)
-    conds = [(meta_cond, vals) for (meta_cond, vals) ∈ bsc.grouped_featconditions
-                if feature(meta_cond) ∉ φ_features]
-    return conds == [] ? false : BoundedScalarConditions{ScalarCondition}(conds)
-end
+#     φ_features = feature(φ)
+#     conds = [(meta_cond, vals) for (meta_cond, vals) ∈ bsc.grouped_featconditions
+#                 if feature(meta_cond) ∉ φ_features]
+#     return conds == [] ? false : BoundedScalarConditions{ScalarCondition}(conds)
+# end
 
 
 function sortantecedents(
@@ -113,8 +89,7 @@ function find_new_conditions(
 
     sat_idexs = interpret(candidate_antecedent, X)
     X_covered = SoleData.instances(X, sat_idexs, Val(false))
-    @show SoleData.gettable(X_covered)
-    # TODO correct cast?
+
     _atoms = Vector{Atom{ScalarCondition}}(atoms(alphabet(X_covered)))
     possible_atoms = [a for a in _atoms if a ∉ atoms(candidate_antecedent) ]
     return possible_atoms
@@ -128,10 +103,6 @@ function refine_antecedents(
     if length(candidate_antecedents) == 0
 
         possible_conditions =  map(sc->Atom{ScalarCondition}(sc), alphabet(X))
-        # qui ci va la condizione di uscita ?
-        #  printstyled("atoms(ant) | EMPTY\n", bold=true, color=:red)
-        # @showlc possible_conditions :blue
-
         return  map(a->LeftmostConjunctiveForm{Atom{ScalarCondition}}([a]), possible_conditions)
     else
         refined_antecedents = Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
@@ -140,9 +111,6 @@ function refine_antecedents(
             possible_conditions = find_new_conditions(X, ant)
             isempty(possible_conditions) &&
                 return Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
-
-            @showlc atoms(ant) :red
-            # @showlc possible_conditions :blue
 
             for atom ∈ possible_conditions
                 new_antecedent = deepcopy(ant)
@@ -157,7 +125,7 @@ end
 function beamsearch(
     X::PropositionalLogiset,
     y::AbstractVector{CLabel},
-)
+)::LeftmostConjunctiveForm
     best_antecedent = LeftmostConjunctiveForm([⊤])
     bestentropy = entropy(y)
 
@@ -165,8 +133,6 @@ function beamsearch(
     while true
 
         (star, newstar) = newstar, Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
-        # @showlc star :green
-        # @show best_antecedent
         newstar = refine_antecedents(star, X)
         isempty(newstar) && break
 
@@ -175,12 +141,7 @@ function beamsearch(
         if newbestentropy < bestentropy
             best_antecedent = newstar[begin]
             bestentropy = newbestentropy
-            # println("Aggiornato best_antecedent:")
-            # @show best_antecedent
         end
-
-        # readline()
-        # print("\033c") #clear the terminal
     end
     return best_antecedent
 end
@@ -194,34 +155,30 @@ end
 function sole_cn2(
     X::PropositionalLogiset,
     y::AbstractVector{CLabel};
-)
+)::DecisionList
+
     length(y) != nrow(X) && error("size of X and y mismatch")
     slice_tocover = collect(1:length(y))
-
 
     current_X = SoleData.instances(X, slice_tocover, Val(false))
     current_y = y[slice_tocover]
 
     rulelist = Rule[]
     while true
+
         currentrule_distribution = Dict(unique(y) .=> 0)
 
         best_antecedent = beamsearch(current_X, current_y)
-        @show best_antecedent
         # Exit condition
         istop(best_antecedent) && break
-        covered_offsets = findall(z->z==1,
-                            interpret(best_antecedent, current_X))
-        @show current_X
-        @show covered_offsets
+        covered_offsets = findall(z->z==1, interpret(best_antecedent, current_X))
         covered_y = current_y[covered_offsets]
         for c in covered_y
             currentrule_distribution[c] += 1
         end
         antecedentclass = findmax(countmap(covered_y))[2]
         info_cm = (;
-            supporting_labels = Int.(values(currentrule_distribution))
-        )
+            supporting_labels = Int.(values(currentrule_distribution)))
         consequent_cm = SoleModels.ConstantModel(antecedentclass, info_cm)
 
         push!(rulelist, Rule(best_antecedent, consequent_cm))
