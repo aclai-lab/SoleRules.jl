@@ -50,6 +50,8 @@ export info
 
 export mine, apply
 
+# export RuleAntecedent, Star
+
 include("meaningfulness-measures.jl")
 
 export lsupport, gsupport

@@ -1,29 +1,22 @@
-#= Sole =#
-using SoleLogics
-using SoleRules
-using SoleData
-using Debugger
-using SoleBase
-dbg = Debugger
-#= Others =#
-using BenchmarkTools
-using DataFrames
-using StatsBase: countmap
-#= Import  =#
-import SoleData: PropositionalLogiset, ScalarCondition, BoundedScalarConditions
-import SoleData: alphabet, feature, instances
-import SoleLogics: children
 import SoleBase: CLabel
-import Base: ==, ∈
+using SoleLogics
+import SoleLogics: children
+import SoleRules: RuleAntecedent
+
+using SoleData
+import SoleData: ScalarCondition, PropositionalLogiset, BoundedScalarConditions
+import SoleData: alphabet, instances
+using SoleModels: DecisionList, Rule, ConstantModel
+using DataFrames
+using StatsBase: mode, countmap
 using MLJ: load_iris
 
-# variabile temporaneamente globale
 
 global beam_width = 3
-global SPEC_VERSION = :new
 
 istop(lmlf::LeftmostLinearForm) = children(lmlf) == [⊤]
-function entropy(
+
+function soleentropy(
     y::AbstractVector{<:CLabel};
 )::Float32
 
@@ -37,8 +30,8 @@ end
 
 # Check condition equivalence
 function checkconditionsequivalence(
-    φ1::LeftmostConjunctiveForm{Atom{ScalarCondition}},
-    φ2::LeftmostConjunctiveForm{Atom{ScalarCondition}},
+    φ1::RuleAntecedent,
+    φ2::RuleAntecedent,
 )::Bool
     return  length(φ1) == length(φ2) &&
             !any(iszero, map( x-> x ∈ atoms(φ1), atoms(φ2)))
@@ -46,7 +39,7 @@ end
 
 
 function feature(
-    φ::LeftmostConjunctiveForm{Atom{ScalarCondition}}
+    φ::RuleAntecedent
 )::AbstractVector{UnivariateSymbolValue}
     conditions = value.(atoms(φ))
     return feature.(conditions)
@@ -65,138 +58,124 @@ end
 
 
 function sortantecedents(
-    star::Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}},
+    star::AbstractVector{RuleAntecedent},
     X::PropositionalLogiset,
-    y::Vector{<:CLabel},
+    y::AbstractVector{CLabel},
     beam_width::Int64
 )
-    length(star) == 0 && return [], Inf
+    isempty(star) && return [], Inf
 
     antd_entropies = map(antd->begin
-            sat_idxs = interpret(antd, X)
-            entropy(y[sat_idxs])
+            satinds = interpret(antd, X)
+            soleentropy(y[satinds])
         end, star)
     i_bests = partialsortperm(antd_entropies, 1:min(beam_width, length(antd_entropies)))
-    bestentropy = antd_entropies[i_bests[1]]
 
+    bestentropy = antd_entropies[i_bests[1]]
     return (i_bests, bestentropy)
 end
 
-function find_new_conditions(
+function newconditions(
     X::PropositionalLogiset,
-    candidate_antecedent::LeftmostConjunctiveForm
+    antecedent::RuleAntecedent
 )::Vector{Atom{ScalarCondition}}
 
-    sat_idexs = interpret(candidate_antecedent, X)
-    X_covered = SoleData.instances(X, sat_idexs, Val(false))
+    satindexes = interpret(antecedent, X) |> findall
 
-    _atoms = Vector{Atom{ScalarCondition}}(atoms(alphabet(X_covered)))
-    possible_atoms = [a for a in _atoms if a ∉ atoms(candidate_antecedent) ]
-    return possible_atoms
+    coveredX = SoleData.instances(X, satindexes, Val(true))
+    conditions = Atom{ScalarCondition}.(atoms(alphabet(coveredX)))
+
+    return [a for a in conditions if a ∉ atoms(antecedent)]
 end
 
-function refine_antecedents(
-    candidate_antecedents::Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}},
+function specializeantecedents(
+    star::AbstractVector{RuleAntecedent},
     X::PropositionalLogiset,
-)::Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}
+)::Vector{RuleAntecedent}
 
-    if length(candidate_antecedents) == 0
-
-        possible_conditions =  map(sc->Atom{ScalarCondition}(sc), alphabet(X))
-        return  map(a->LeftmostConjunctiveForm{Atom{ScalarCondition}}([a]), possible_conditions)
+    if isempty(star)
+        conditions =  map(sc->Atom{ScalarCondition}(sc), alphabet(X))
+        return  map(a->RuleAntecedent([a]), conditions)
     else
-        refined_antecedents = Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
-        for ant ∈ candidate_antecedents
+        newstar = RuleAntecedent[]
+        for i_ant ∈ star
+            i_possibleconditions = newconditions(X, i_ant)
+            isempty(i_possibleconditions) && continue
 
-            possible_conditions = find_new_conditions(X, ant)
-            isempty(possible_conditions) &&
-                return Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
-
-            for atom ∈ possible_conditions
-                new_antecedent = deepcopy(ant)
-                push!(new_antecedent.children, atom)
-                push!(refined_antecedents, new_antecedent)
+            for j_atom ∈ i_possibleconditions
+                newantecedent = deepcopy(i_ant)
+                push!(newantecedent.children, j_atom)
+                push!(newstar, newantecedent)
             end
         end
     end
-    return refined_antecedents
+    return newstar
 end
 
 function beamsearch(
     X::PropositionalLogiset,
     y::AbstractVector{CLabel},
 )::LeftmostConjunctiveForm
-    best_antecedent = LeftmostConjunctiveForm([⊤])
-    bestentropy = entropy(y)
 
-    newstar = Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
+    bestantecedent = LeftmostConjunctiveForm([⊤])
+    bestantecedent_entropy = soleentropy(y)
+
+    newstar = RuleAntecedent[]
     while true
-
-        (star, newstar) = newstar, Vector{LeftmostConjunctiveForm{Atom{ScalarCondition}}}([])
-        newstar = refine_antecedents(star, X)
+        (star, newstar) = newstar, RuleAntecedent[]
+        newstar = specializeantecedents(star, X)
         isempty(newstar) && break
 
-        _sortperm, newbestentropy = sortantecedents(newstar,X,y,beam_width)
-        newstar = newstar[_sortperm]
-        if newbestentropy < bestentropy
-            best_antecedent = newstar[begin]
-            bestentropy = newbestentropy
+        (perm_, candidateantecedent_entropy) = sortantecedents(newstar,X,y,beam_width)
+        newstar = newstar[perm_]
+        if candidateantecedent_entropy < bestantecedent_entropy
+            bestantecedent = newstar[1]
+            bestantecedent_entropy = candidateantecedent_entropy
         end
     end
-    return best_antecedent
+    return bestantecedent
 end
 
-function displaylist(decisionlist)
-    for rule in rulebase(decisionlist)
-        print("$(SoleModels.info(rule.consequent)[1]) $(rule)")
-    end
-end
-
-function sole_cn2(
+function fit(
     X::PropositionalLogiset,
     y::AbstractVector{CLabel};
 )::DecisionList
 
     length(y) != nrow(X) && error("size of X and y mismatch")
-    slice_tocover = collect(1:length(y))
+    uncoveredslice = collect(1:ninstances(X))
 
-    current_X = SoleData.instances(X, slice_tocover, Val(false))
-    current_y = y[slice_tocover]
+    uncoveredX = SoleData.instances(X, uncoveredslice, Val(true))
+    uncoveredy = y[uncoveredslice]
 
     rulelist = Rule[]
     while true
 
-        currentrule_distribution = Dict(unique(y) .=> 0)
+        bestantecedent = beamsearch(uncoveredX, uncoveredy)
+        istop(bestantecedent) && break
 
-        best_antecedent = beamsearch(current_X, current_y)
-        # Exit condition
-        istop(best_antecedent) && break
-        covered_offsets = findall(z->z==1, interpret(best_antecedent, current_X))
-        covered_y = current_y[covered_offsets]
-        for c in covered_y
-            currentrule_distribution[c] += 1
-        end
-        antecedentclass = findmax(countmap(covered_y))[2]
+        antecedentcoverage  = interpret(bestantecedent, uncoveredX) |> findall
+        consequent = uncoveredy[antecedentcoverage] |> mode
         info_cm = (;
-            supporting_labels = Int.(values(currentrule_distribution)))
-        consequent_cm = SoleModels.ConstantModel(antecedentclass, info_cm)
+            supporting_labels = nothing
+        )
+        consequent_cm = ConstantModel(consequent, info_cm)
 
-        push!(rulelist, Rule(best_antecedent, consequent_cm))
+        push!(rulelist, Rule(bestantecedent, consequent_cm))
 
-        setdiff!(slice_tocover, slice_tocover[covered_offsets])
-        current_X = SoleData.instances(X, slice_tocover, Val(false))
-        current_y = y[slice_tocover]
+        setdiff!(uncoveredslice, uncoveredslice[antecedentcoverage])
+        uncoveredX = SoleData.instances(X, uncoveredslice, Val(true))
+        uncoveredy = y[uncoveredslice]
     end
-
-    defaultrule_consequent = current_y[begin]
-    defaultrule = Rule(⊤, defaultrule_consequent)
-    return DecisionList(rulelist, defaultrule)
-
-
+    if !allunique(uncoveredy)
+        error("Default class can't be created")
+    end
+    defaultconsequent = uncoveredy[begin]
+    return DecisionList(rulelist, defaultconsequent)
 end
 
-X...,y = load_iris()
-X_df = DataFrame(X)
-X = PropositionalLogiset(X_df)
-n_instances = ninstances(X)
-y = Vector{CLabel}(y)
+#= Int.(values(currentrule_distribution)) =#
+# currentrule_distribution = Dict(unique(y) .=> 0)
+
+# for c in coveredy
+#     currentrule_distribution[c] += 1
+# end

@@ -4,7 +4,6 @@ using SoleRules
 using SoleBase
 using SoleModels
 using DataFrames
-using Debugger
 using Random
 using StatsBase: countmap
 import SoleLogics: LogicalInstance, Formula, LeftmostLinearForm
@@ -12,9 +11,6 @@ import SoleModels: Rule, AbstractModel, ConstantModel
 import SoleBase: CLabel
 import SoleData: PropositionalLogiset, BoundedScalarConditions
 import SoleData: features, UnivariateSymbolValue
-using MLJ: load_iris
-
-global bestruleentropy = 2.0
 
 struct Selector
     att::Symbol # simil Feature
@@ -28,7 +24,6 @@ end
     test_operator(sel::Selector) = sel.test_operator
     varname(sel::Selector) = sel.att
     treshold(sel::Selector) = sel.val # che poi non è una treshold :)
-
 
 
     function selector2soleatom(sel::Selector)::Atom{ScalarCondition}
@@ -158,25 +153,16 @@ end
         X::AbstractDataFrame
     )::Star
         if starsize(star) == 0
-            # Se la stella è vuota crea nuove regole da inserire ( una per ogni selector)
             possible_selectors = find_new_selectors(X)
             possible_antecedents = map(sel->RuleBody([sel]), possible_selectors)
 
-            # printstyled("atoms(ant) | EMPTY\n", bold=true, color=:red)
-            # @showlc possible_selectors :blue
             return Star(possible_antecedents)
         else
-            # Se la stella non è vuota specializza tutti gli antecedenti
             refined_antecedents = Vector{RuleBody}([])
             for _antecedent in selectors(star)
                 possible_selectors = find_new_selectors(X, _antecedent)
                 isempty(possible_selectors) &&
                     return Star([])
-
-                # @showlc selectors(_antecedent) :red
-                # @showlc possible_selectors :blue
-
-                # if exist possible selectors
                 for _selector in possible_selectors
                     new_antecedent = deepcopy(_antecedent)
                     pushselector!(new_antecedent, _selector)
@@ -201,28 +187,6 @@ end
             println(io,"$key    $(dict[key])")
         end
     end
-
-############################################################################################
-
-struct RuleList
-    list::Vector{MyRule}
-end
-
-# >>>
-    function Base.show(io::IO, rl::RuleList)
-        println("antecedents: ( ordered )")
-        for rule ∈ rl.list
-            print(io, " * ")
-            print(rule)
-        end
-    end
-    function Base.getindex(rl::RuleList, index::Int)
-        return rl.list[index]
-    end
-############################################################################################
-# End structures definition
-
-symbolnames(X_df::AbstractDataFrame) = Symbol.(names(X_df))
 
 function entropy(x)
 
@@ -267,7 +231,6 @@ function base_beamsearch(
     while true
 
         (star, newstar) = newstar, Star([])
-        # @showlc selectors(star) :green
         newstar = base_refine_antecedents(star, X)
         # Exit condition
         isempty(newstar) && break
@@ -279,9 +242,6 @@ function base_beamsearch(
             best_antecedent = newstar.antecedents[begin]
             bestentropy = newbestentropy
         end
-
-        # readline()
-        # print("\033c")
     end
 return best_antecedent
 end
@@ -294,7 +254,7 @@ end
 
 function base_cn2(
     X::AbstractDataFrame,
-    y::Vector{CLabel}
+    y::AbstractVector{<:CLabel}
 )
     length(y) != nrow(X) && error("size of X and y mismatch")
     slice_tocover = collect(1:length(y))
@@ -302,10 +262,9 @@ function base_cn2(
     current_X = X[:,:]
     current_y = y[:]
 
-    rulelist = Rule[]
+    rulelist = ClassificationRule[]
     while true
 
-        # @show slice_tocover
         best_antecedent = base_beamsearch( current_X, current_y)
         # Exit condition
         isnothing(best_antecedent) && break
@@ -315,21 +274,13 @@ function base_cn2(
         antecedent_class = mostcommonvalue(current_y[covered_indxs])
         push!(rulelist, convert_solerule(best_antecedent, antecedent_class))
 
-        # Virtually remove the instances
         setdiff!(slice_tocover, slice_tocover[covered_indxs])
         current_X = X[slice_tocover, :]
         current_y = y[slice_tocover]
     end
-    defaultrule_consequent = current_y[begin]
-    defaultrule = Rule(⊤, defaultrule_consequent)
-    return DecisionList(rulelist, defaultrule)
+    if length(unique(current_y)) != 1
+        error("Default class can't be created") # cambiare questo errore
+    end
+    defaultconsequent = current_y[begin]
+    return DecisionList(rulelist, defaultconsequent)
 end
-
-# X...,y = load_iris()
-# X_df = DataFrame(X)
-# y = Vector{CLabel}(y)
-
-
-# mask = [1,2,3,4, 51,52,53,54, 101,102,103,104]
-# X_m = X_df[mask, :]
-# y_m = y[mask]
