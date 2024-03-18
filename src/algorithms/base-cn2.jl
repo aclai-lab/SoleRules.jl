@@ -202,7 +202,7 @@ end
 function base_sortedantecedents(
     star::Star,
     X::AbstractDataFrame,
-    y::Vector{CLabel},
+    y::AbstractVector{<:CLabel},
     beam_width::Int64
 )
     starsize(star) == 0 && return [], Inf
@@ -221,7 +221,7 @@ end
 
 function base_beamsearch(
     X::AbstractDataFrame,
-    y::Vector{CLabel};
+    y::AbstractVector{<:CLabel};
     beam_width=3
 )
     best_antecedent = nothing
@@ -278,7 +278,7 @@ function base_cn2(
         current_X = @view X[slice_tocover, :]
         current_y = @view y[slice_tocover]
     end
-    if allunique(current_y)
+    if !allunique(current_y)
         error("Default class can't be created") # cambiare questo errore
     end
     defaultconsequent = current_y[begin]

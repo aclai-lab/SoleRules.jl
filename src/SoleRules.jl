@@ -80,7 +80,13 @@ export patternbase
 export fpgrowth, @fpoptimize
 
 
+module BaseCN2
 include("algorithms/base-cn2.jl")
+end
+
+module SoleCN2
+include("algorithms/sole-cn2.jl")
+end
 
 export CN2
 

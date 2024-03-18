@@ -9,22 +9,15 @@ using MLJ
 using StatsBase
 using Random
 
-module BaseCN2
-include("../src/algorithms/base-cn2.jl")
-end
-
-module SoleCN2
-include("../src/algorithms/sole-cn2.jl")
-end
+using SoleRules: SoleCN2, BaseCN2
 
 # Input
-X...,y = MLJ.load_iris()
+X..., y = MLJ.load_iris()
 X_df = DataFrame(X)
 X = PropositionalLogiset(X_df)
 n_instances = ninstances(X)
 y = Vector{CLabel}(y)
 ############################################################################################
-
 
 # Test
 base_decisionlist = BaseCN2.base_cn2(X_df, y)
@@ -38,7 +31,6 @@ sole_outcome_on_training = apply(sole_decisionlist, X)
 
 @test all(base_outcome_on_training .== y)
 @test all(sole_outcome_on_training .== y)
-
 
 orange_decisionlist = """
 [1, 0, 0]  IF sepal length<=4.3 THEN iris=Iris-setosa -0.0
@@ -98,15 +90,13 @@ imported_decisionlist = SoleModels.orange_decision_list(orange_decisionlist, tru
 
 # TODO da cambiare test
 antpairs = zip(SoleModels.antecedent.(rulebase(imported_decisionlist)),
-                        SoleModels.antecedent.(rulebase(sole_decisionlist)))
+    SoleModels.antecedent.(rulebase(sole_decisionlist)))
 
 @test [checkconditionsequivalence(i_ant, s_ant) for (i_ant, s_ant) in antpairs] |> all
 
-
-
-
-# @test SoleModels.antecedent.(listrules(sole_decisionlist)) == SoleModels.antecedent.(listrules(base_decisionlist))
-# @test SoleModels.consequent.(listrules(sole_decisionlist)) == SoleModels.consequent.(listrules(sole_decisionlist))
+@which tree.(SoleModels.antecedent.(listrules(sole_decisionlist)))[1] == tree.(SoleModels.antecedent.(listrules(sole_decisionlist)))[1]
+@test SoleModels.antecedent.(listrules(sole_decisionlist)) == SoleModels.antecedent.(listrules(base_decisionlist))
+@test SoleModels.consequent.(listrules(sole_decisionlist)) == SoleModels.consequent.(listrules(sole_decisionlist))
 
 # @test (listrules(sole_decisionlist)) == (listrules(base_decisionlist))
 
@@ -134,13 +124,8 @@ antpairs = zip(SoleModels.antecedent.(rulebase(imported_decisionlist)),
 # @test all(outcomes .== outcomes2)
 # # ================================
 
-
-
-
 # @test_nowarn listrules(decisionlist)
 # @test_nowarn listrules(decisionlist2)
-
-
 
 # @test MLJ.accuracy(outcomes, y[test_slice]) > 0.8
 # @test MLJ.accuracy(outcomes2, y[test_slice]) > 0.8

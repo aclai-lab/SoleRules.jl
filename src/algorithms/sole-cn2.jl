@@ -9,7 +9,6 @@ import SoleData: alphabet, instances
 using SoleModels: DecisionList, Rule, ConstantModel
 using DataFrames
 using StatsBase: mode, countmap
-using MLJ: load_iris
 
 global beam_width = 3
 
@@ -211,6 +210,8 @@ function sequentialcovering(
     defaultconsequent = uncoveredy[begin]
     return DecisionList(rulelist, defaultconsequent)
 end
+
+sole_cn2 = sequentialcovering
 
 #= Int.(values(currentrule_distribution)) =#
 # currentrule_distribution = Dict(unique(y) .=> 0)
