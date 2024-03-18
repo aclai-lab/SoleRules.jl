@@ -4,7 +4,6 @@ using SoleRules
 using SoleBase
 using SoleModels
 using DataFrames
-using Random
 using StatsBase: countmap
 import SoleLogics: LogicalInstance, Formula, LeftmostLinearForm
 import SoleModels: Rule, AbstractModel, ConstantModel
@@ -221,8 +220,8 @@ end
 
 function base_beamsearch(
     X::AbstractDataFrame,
-    y::AbstractVector{<:CLabel};
-    beam_width=3
+    y::AbstractVector{<:CLabel},
+    beam_width::Integer
 )
     best_antecedent = nothing
     bestentropy = entropy(y)
@@ -243,7 +242,7 @@ function base_beamsearch(
             bestentropy = newbestentropy
         end
     end
-return best_antecedent
+    return best_antecedent
 end
 
 function mostcommonvalue(classlist)
@@ -254,7 +253,8 @@ end
 
 function base_cn2(
     X::AbstractDataFrame,
-    y::AbstractVector{<:CLabel}
+    y::AbstractVector{<:CLabel};
+    beam_width = 3
 )
     length(y) != nrow(X) && error("size of X and y mismatch")
     slice_tocover = collect(1:length(y))
@@ -265,7 +265,7 @@ function base_cn2(
     rulelist = ClassificationRule[]
     while true
 
-        best_antecedent = base_beamsearch( current_X, current_y)
+        best_antecedent = base_beamsearch(current_X, current_y, beam_width)
         # Exit condition
         isnothing(best_antecedent) && break
 

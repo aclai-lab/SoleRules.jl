@@ -5,12 +5,10 @@ import SoleRules: RuleAntecedent
 
 using SoleData
 import SoleData: ScalarCondition, PropositionalLogiset, BoundedScalarConditions
-import SoleData: alphabet, instances
+import SoleData: alphabet
 using SoleModels: DecisionList, Rule, ConstantModel
 using DataFrames
 using StatsBase: mode, countmap
-
-global beam_width = 3
 
 
 istop(lmlf::LeftmostLinearForm) = children(lmlf) == [⊤]
@@ -97,7 +95,7 @@ function sortantecedents(
     X::PropositionalLogiset,
     y::AbstractVector{CLabel},
     beam_width::Int64,
-    quality_evaluator::Function
+    quality_evaluator::Function,
 )
     isempty(star) && return [], Inf
 
@@ -119,7 +117,7 @@ function newconditions(
 
     satindexes = interpret(antecedent, X) |> findall
 
-    coveredX = SoleData.instances(X, satindexes, Val(true))
+    coveredX = slicedataset(X, satindexes; return_view = true)
     conditions = Atom{ScalarCondition}.(atoms(alphabet(coveredX)))
 
     return [a for a in conditions if a ∉ atoms(antecedent)]
@@ -152,11 +150,12 @@ end
 function beamsearch(
     X::PropositionalLogiset,
     y::AbstractVector{CLabel},
-    quality_evaluator::Function = soleentropy
+    beam_width::Integer,
+    quality_evaluator::Function,
 )::LeftmostConjunctiveForm
 
     bestantecedent = LeftmostConjunctiveForm([⊤])
-    bestantecedent_entropy = soleentropy(y)
+    bestantecedent_entropy = quality_evaluator(y)
 
     newstar = RuleAntecedent[]
     while true
@@ -164,7 +163,7 @@ function beamsearch(
         newstar = specializeantecedents(star, X)
         isempty(newstar) && break
 
-        (perm_, candidateantecedent_entropy) = sortantecedents(newstar,X,y,beam_width, quality_evaluator)
+        (perm_, candidateantecedent_entropy) = sortantecedents(newstar, X, y, beam_width, quality_evaluator)
         newstar = newstar[perm_]
         if candidateantecedent_entropy < bestantecedent_entropy
             bestantecedent = newstar[1]
@@ -177,32 +176,33 @@ end
 function sequentialcovering(
     X::PropositionalLogiset,
     y::AbstractVector{CLabel};
+    beam_width::Integer = 3,
+    quality_evaluator::Function = soleentropy,
 )::DecisionList
-
     length(y) != nrow(X) && error("size of X and y mismatch")
     uncoveredslice = collect(1:ninstances(X))
 
-    uncoveredX = SoleData.instances(X, uncoveredslice, Val(true))
+    uncoveredX = slicedataset(X, uncoveredslice; return_view = true)
     uncoveredy = y[uncoveredslice]
 
     rulelist = Rule[]
     while true
 
-        bestantecedent = beamsearch(uncoveredX, uncoveredy)
+        bestantecedent = beamsearch(uncoveredX, uncoveredy, beam_width, quality_evaluator)
         istop(bestantecedent) && break
 
         antecedentcoverage  = interpret(bestantecedent, uncoveredX) |> findall
         consequent = uncoveredy[antecedentcoverage] |> mode
         info_cm = (;
-            supporting_labels = nothing
+            supporting_labels = collct(uncoveredy)
         )
         consequent_cm = ConstantModel(consequent, info_cm)
 
         push!(rulelist, Rule(bestantecedent, consequent_cm))
 
         setdiff!(uncoveredslice, uncoveredslice[antecedentcoverage])
-        uncoveredX = SoleData.instances(X, uncoveredslice, Val(true))
-        uncoveredy = y[uncoveredslice]
+        uncoveredX = slicedataset(X, uncoveredslice; return_view = true)
+        uncoveredy = @view y[uncoveredslice]
     end
     if !allunique(uncoveredy)
         error("Default class can't be created")

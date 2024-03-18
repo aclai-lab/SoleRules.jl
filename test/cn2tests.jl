@@ -92,11 +92,13 @@ imported_decisionlist = SoleModels.orange_decision_list(orange_decisionlist, tru
 antpairs = zip(SoleModels.antecedent.(rulebase(imported_decisionlist)),
     SoleModels.antecedent.(rulebase(sole_decisionlist)))
 
-@test [checkconditionsequivalence(i_ant, s_ant) for (i_ant, s_ant) in antpairs] |> all
+@test [SoleRules.SoleCN2.checkconditionsequivalence(i_ant, s_ant) for (i_ant, s_ant) in antpairs] |> all
 
-@which tree.(SoleModels.antecedent.(listrules(sole_decisionlist)))[1] == tree.(SoleModels.antecedent.(listrules(sole_decisionlist)))[1]
-@test SoleModels.antecedent.(listrules(sole_decisionlist)) == SoleModels.antecedent.(listrules(base_decisionlist))
-@test SoleModels.consequent.(listrules(sole_decisionlist)) == SoleModels.consequent.(listrules(sole_decisionlist))
+@test @test syntaxstring.(tree.(SoleModels.antecedent.(listrules(sole_decisionlist)))) == syntaxstring.(tree.(SoleModels.antecedent.(listrules(base_decisionlist))))
+# @which tree.(SoleModels.antecedent.(listrules(sole_decisionlist)))[1] == tree.(SoleModels.antecedent.(listrules(sole_decisionlist)))[1]
+
+@test_broken tree.(SoleModels.antecedent.(listrules(sole_decisionlist))) == tree.(SoleModels.antecedent.(listrules(base_decisionlist)))
+@test_broken tree.(SoleModels.consequent.(listrules(sole_decisionlist))) == tree.(SoleModels.consequent.(listrules(sole_decisionlist)))
 
 # @test (listrules(sole_decisionlist)) == (listrules(base_decisionlist))
 
@@ -134,7 +136,7 @@ antpairs = zip(SoleModels.antecedent.(rulebase(imported_decisionlist)),
 
 # using BenchmarkTools
 # # Time
-# @btime BaseCN2.base_cn2(X_df, y)
-# @btime SoleCN2.sole_cn2(X, y)
+# @benchmark BaseCN2.base_cn2(X_df, y)
+# @benchmark SoleCN2.sole_cn2(X, y)
 
 # @test_broken outcome_on_training = apply(decision_list, X_pl_view)
