@@ -11,21 +11,58 @@ using DataFrames
 using StatsBase: mode, countmap
 using MLJ: load_iris
 
-
 global beam_width = 3
 
+
 istop(lmlf::LeftmostLinearForm) = children(lmlf) == [⊤]
+
+
+
+
+# def get_dist(Y, W, domain):
+#     """
+#     Determine the class distribution for a given array of
+#     classifications. Identify the number of classes from the data
+#     domain.
+
+#     Parameters
+#     ----------
+#     Y : ndarray, int
+#         Array of classifications.
+#     W : ndarray, float
+#         Weights.
+#     domain : Orange.data.domain.Domain
+#         Data domain.
+
+#     Returns
+#     -------
+#     dist : ndarray
+#         Class distribution.
+
+#     """
+#     return np.bincount(Y, weights=W, minlength=len(domain.class_var.values))
+
+function get_dist(
+    y::Vector{CLabel};
+    W::Vector{<:Real}
+)
+
+
+
+end
 
 function soleentropy(
     y::AbstractVector{<:CLabel};
 )::Float32
 
-    length(y) == 0 && return Inf
-    count = values(countmap(y))
-    length(count) == 1 && return 0.0
-    logbase = length(count)
-    prob = count ./ sum(count)
-    return -sum(prob .* log.(logbase, prob))
+    distribution = values(countmap(y))
+    isempty(distribution) &&
+        return Inf
+    length(distribution) == 1 &&
+        return 0.0
+
+    prob = distribution ./ sum(distribution)
+    return -sum(prob .* log2.(prob))
 end
 
 # Check condition equivalence
@@ -38,13 +75,12 @@ function checkconditionsequivalence(
 end
 
 
-function feature(
-    φ::RuleAntecedent
-)::AbstractVector{UnivariateSymbolValue}
-    conditions = value.(atoms(φ))
-    return feature.(conditions)
-end
-
+# function feature(
+#     φ::RuleAntecedent
+# )::AbstractVector{UnivariateSymbolValue}
+#     conditions = value.(atoms(φ))
+#     return feature.(conditions)
+# end
 # function conjunctibleconds(
 #     bsc::BoundedScalarConditions,
 #     φ::Formula
@@ -61,19 +97,21 @@ function sortantecedents(
     star::AbstractVector{RuleAntecedent},
     X::PropositionalLogiset,
     y::AbstractVector{CLabel},
-    beam_width::Int64
+    beam_width::Int64,
+    quality_evaluator::Function
 )
     isempty(star) && return [], Inf
 
-    antd_entropies = map(antd->begin
-            satinds = interpret(antd, X)
-            soleentropy(y[satinds])
-        end, star)
-    i_bests = partialsortperm(antd_entropies, 1:min(beam_width, length(antd_entropies)))
+    antsquality = map(antd->begin
+            satinds = interpret(antd, X) |> findall
+            quality_evaluator(y[satinds])
+    end, star)
 
-    bestentropy = antd_entropies[i_bests[1]]
-    return (i_bests, bestentropy)
+    i_newstar = partialsortperm(antsquality, 1:min(beam_width, length(antsquality)))
+    bestantecedent_quality = antsquality[i_newstar[1]]
+    return (i_newstar, bestantecedent_quality)
 end
+
 
 function newconditions(
     X::PropositionalLogiset,
@@ -115,6 +153,7 @@ end
 function beamsearch(
     X::PropositionalLogiset,
     y::AbstractVector{CLabel},
+    quality_evaluator::Function = soleentropy
 )::LeftmostConjunctiveForm
 
     bestantecedent = LeftmostConjunctiveForm([⊤])
@@ -126,7 +165,7 @@ function beamsearch(
         newstar = specializeantecedents(star, X)
         isempty(newstar) && break
 
-        (perm_, candidateantecedent_entropy) = sortantecedents(newstar,X,y,beam_width)
+        (perm_, candidateantecedent_entropy) = sortantecedents(newstar,X,y,beam_width, quality_evaluator)
         newstar = newstar[perm_]
         if candidateantecedent_entropy < bestantecedent_entropy
             bestantecedent = newstar[1]
@@ -136,7 +175,7 @@ function beamsearch(
     return bestantecedent
 end
 
-function fit(
+function sequentialcovering(
     X::PropositionalLogiset,
     y::AbstractVector{CLabel};
 )::DecisionList

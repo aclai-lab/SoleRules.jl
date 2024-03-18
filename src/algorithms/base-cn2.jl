@@ -259,8 +259,8 @@ function base_cn2(
     length(y) != nrow(X) && error("size of X and y mismatch")
     slice_tocover = collect(1:length(y))
 
-    current_X = X[:,:]
-    current_y = y[:]
+    current_X = @view X[:,:]
+    current_y = @view y[:]
 
     rulelist = ClassificationRule[]
     while true
@@ -275,10 +275,10 @@ function base_cn2(
         push!(rulelist, convert_solerule(best_antecedent, antecedent_class))
 
         setdiff!(slice_tocover, slice_tocover[covered_indxs])
-        current_X = X[slice_tocover, :]
-        current_y = y[slice_tocover]
+        current_X = @view X[slice_tocover, :]
+        current_y = @view y[slice_tocover]
     end
-    if length(unique(current_y)) != 1
+    if allunique(current_y)
         error("Default class can't be created") # cambiare questo errore
     end
     defaultconsequent = current_y[begin]

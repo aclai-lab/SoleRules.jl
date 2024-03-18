@@ -10,7 +10,12 @@ Generic:
     ☐ MLJ interface for cn2
     ✔ Aggiornare confronto tra LmCF @done(24-03-04 19:36)
     # (rimuovere confronto tramite Base.:(==))
-    ☐ Aggiungere selezione conditions con entropyMDL
+    ☐ Laplace
+    ☐ entropyMDL
+    ☐ Rule validation
+    ☐ LRS
+    ☐ Weighted relative accuracy
+
 
 
 Utility:

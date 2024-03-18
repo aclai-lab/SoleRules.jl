@@ -25,19 +25,6 @@ n_instances = ninstances(X)
 y = Vector{CLabel}(y)
 ############################################################################################
 
-# test beamsearch
-# mask = [1,2,3,51,52,53,101,102,103]
-
-# X_bm = SoleData.instances(X,mask, Val(true))
-# y_bm = y[mask]
-
-# antecedent = beamsearch(X_bm, y_bm)
-# scondition = children(ant)[begin] |> value
-
-
-
-
-
 
 # Test
 base_decisionlist = BaseCN2.base_cn2(X_df, y)
