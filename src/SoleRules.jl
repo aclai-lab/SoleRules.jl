@@ -79,20 +79,9 @@ export linkage, linkage!, follow, link! # dispatches for both FPTree and HeaderT
 export patternbase
 export fpgrowth, @fpoptimize
 
-
-module BaseCN2
-include("algorithms/base-cn2.jl")
-end
-
-module SoleCN2
-include("algorithms/sole-cn2.jl")
-end
-
-export CN2
-
 include("utils.jl") # IDEA: move this in SoleData
-
 export equicut, quantilecut
+
 export make_conditions
 
 end
